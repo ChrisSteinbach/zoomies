@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "server",
+  "dolt_database": "zoomies",
+  "project_id": "b33af6ad-ee78-40cc-8bce-762292e2ce1b"
+}
