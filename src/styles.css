@@ -108,3 +108,104 @@ body {
   outline: 3px solid #1a6b3c;
   outline-offset: -3px;
 }
+
+/* ---------------------------------------------------------------------------
+ * Status states (src/app/status-view.ts)
+ *
+ * Everything shown when there is no list to show: locating, no position,
+ * searching, nothing found, failed. Two shapes — a takeover, which is the
+ * whole screen because there is nothing behind it, and a notice, which is a
+ * strip above results that are still worth reading (docs/spec.md §7.6).
+ *
+ * Same rules as the list: 44px targets, focus visible without hunting.
+ * ------------------------------------------------------------------------ */
+
+/* The live region stays in the DOM through `ready` so the next change is
+   announced — but with nothing to say it must take up no room. */
+.status-view:empty {
+  display: none;
+}
+
+.status-card {
+  padding: 1rem;
+  border-radius: 0.5rem;
+  background: #ececec;
+}
+
+/* Nothing behind it, so it can breathe and sit where the eye lands. */
+.status-card[data-status-tone="takeover"] {
+  max-width: 28rem;
+  margin: 1.5rem auto;
+  text-align: center;
+}
+
+/* Results underneath: stay small, stay out of the way, do not push them off
+   the screen. */
+.status-card[data-status-tone="notice"] {
+  margin: 0 0 0.75rem;
+  padding: 0.75rem;
+}
+
+/* A failure is the one state that earns a warning colour. `empty` deliberately
+   does not: finding nothing within 25 km is a legitimate answer, not a fault
+   (docs/spec.md §3), and colouring it like one would be a lie in paint. */
+.status-card[data-status="failed"] {
+  background: #fdf1dc;
+}
+
+/* The accent bar belongs to the notice form, where it reads as a margin note
+   pinned to the results below it. */
+.status-card[data-status="failed"][data-status-tone="notice"] {
+  box-shadow: inset 0.25rem 0 0 #8a5000;
+}
+
+.status-title {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 600;
+}
+
+.status-detail {
+  margin: 0.5rem 0 0;
+  color: #444;
+  font-size: 0.9375rem;
+}
+
+.status-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.status-card[data-status-tone="takeover"] .status-actions {
+  justify-content: center;
+}
+
+.status-action {
+  flex: none;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  padding: 0 1rem;
+  border: 1px solid #1a6b3c;
+  border-radius: 0.5rem;
+  font: inherit;
+  cursor: pointer;
+}
+
+.status-action-primary {
+  background: #1a6b3c;
+  color: #fff;
+}
+
+.status-action-secondary {
+  background: none;
+  color: #1a6b3c;
+}
+
+/* Outside the button rather than inside it: the primary is filled green, and
+   an inset ring would disappear into it. */
+.status-action:focus-visible {
+  outline: 3px solid #1a6b3c;
+  outline-offset: 2px;
+}
