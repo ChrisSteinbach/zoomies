@@ -22,7 +22,17 @@ export interface LocationError {
 }
 
 export interface LocationCallbacks {
-  onPosition: (position: LatLon) => void;
+  /**
+   * A fix, and how far out the device thinks it might be, in metres — null
+   * when it does not say.
+   *
+   * The radius travels beside the position rather than inside it because it
+   * is a fact about the measurement, not about the place, and {@link LatLon}
+   * is the app's type for places. Nothing decides anything on it: it exists
+   * so that a slow fix can be read as "the phone spent eight seconds getting
+   * to eight metres" rather than just "the phone was slow".
+   */
+  onPosition: (position: LatLon, accuracyM: number | null) => void;
   onError: (error: LocationError) => void;
 }
 
@@ -66,10 +76,14 @@ export function watchLocation(
 
   const watchId = geo.watchPosition(
     (pos) => {
-      callbacks.onPosition({
-        lat: pos.coords.latitude,
-        lon: pos.coords.longitude,
-      });
+      const { latitude, longitude, accuracy } = pos.coords;
+      callbacks.onPosition(
+        { lat: latitude, lon: longitude },
+        // Required by the spec, so a device that leaves it out or reports a
+        // NaN is off-standard rather than impossible — and either would print
+        // as "±NaN m". "Does not say" is the honest reading of both.
+        Number.isFinite(accuracy) ? accuracy : null,
+      );
     },
     (err) => {
       callbacks.onError({

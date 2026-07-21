@@ -12,6 +12,7 @@ import { composeApp } from "./compose-app";
 import type { AppDeps } from "./compose-app";
 import type { ExpandingSearchResult } from "./expanding-search";
 import type { LocationCallbacks, StopFn } from "./location";
+import { loadMarks, resetLoadTimeline } from "./load-timeline";
 import { PlaceProviderError } from "./place-provider";
 import type { DogSpot, LatLon } from "./types";
 
@@ -47,8 +48,8 @@ function fakeGps() {
   return {
     watch,
     stop,
-    fix(position: LatLon) {
-      callbacks?.onPosition(position);
+    fix(position: LatLon, accuracyM: number | null = null) {
+      callbacks?.onPosition(position, accuracyM);
     },
     fail(code: "PERMISSION_DENIED" | "POSITION_UNAVAILABLE" | "TIMEOUT") {
       callbacks?.onError({ code, message: code });
@@ -146,6 +147,14 @@ function parkNames(root: HTMLElement): string[] {
 function statusText(root: HTMLElement): string {
   return root.querySelector(".app-status")?.textContent?.trim() ?? "";
 }
+
+beforeEach(() => {
+  // The timeline is one cold start's worth of module state (load-timeline.ts),
+  // not something scoped to a test — without this, only the first test in the
+  // file would ever get to record a "watch-started", since a milestone's
+  // first write wins.
+  resetLoadTimeline();
+});
 
 afterEach(() => {
   document.body.replaceChildren();
@@ -349,5 +358,58 @@ describe("shutting down", () => {
 
     expect(gps.stop).toHaveBeenCalled();
     expect(root.children).toHaveLength(0);
+  });
+});
+
+describe("the load timeline", () => {
+  it("marks its way from asking for a position to the first row on screen", async () => {
+    const { gps, search } = mount();
+
+    gps.fix(TANTOLUNDEN, 8);
+    await search.answer([TANTO]);
+
+    expect(loadMarks().map((mark) => mark.milestone)).toEqual([
+      "watch-started",
+      "first-fix",
+      "search-started",
+      "search-settled",
+      "first-row",
+    ]);
+  });
+
+  it("notes how far out the fix was", () => {
+    const { gps } = mount();
+
+    gps.fix(TANTOLUNDEN, 8);
+
+    const fix = loadMarks().find((mark) => mark.milestone === "first-fix");
+    expect(fix?.detail).toBe("±8 m");
+  });
+
+  it("does not claim a first row when the search comes back empty", async () => {
+    const { gps, search } = mount();
+
+    gps.fix(TANTOLUNDEN);
+    await search.answer([], 25_000);
+
+    expect(loadMarks().map((mark) => mark.milestone)).not.toContain(
+      "first-row",
+    );
+  });
+
+  it("marks the search as settled even for an answer nobody is waiting for any more", async () => {
+    const { gps, search } = mount();
+
+    gps.fix(TANTOLUNDEN);
+    await search.answer([TANTO]);
+    gps.fix(FAR_ENOUGH);
+    await search.answer([DRAKEN], 3000, 0);
+
+    // Both the live search and the one the user has since walked away from
+    // are "data back" moments; only the first is a record of the cold start,
+    // per markLoad's first-write-wins rule.
+    expect(
+      loadMarks().filter((mark) => mark.milestone === "search-settled"),
+    ).toHaveLength(1);
   });
 });
