@@ -1,4 +1,10 @@
+import { registerSW } from "virtual:pwa-register";
 import "./styles.css";
+
+// Install the service worker that precaches the app shell. `immediate` picks
+// up a new build without waiting for every tab to close, which matches the
+// plugin's `autoUpdate` strategy.
+registerSW({ immediate: true });
 
 /**
  * Placeholder entry point: mounts a heading so the toolchain has something

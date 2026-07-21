@@ -1,0 +1,18 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 512 512"
+  width="512"
+  height="512"
+  role="img"
+  aria-label="Zoomies"
+>
+  <title>Zoomies</title>
+  <circle cx="256" cy="256" r="256" fill="#2e7d32" />
+  <g fill="#f7faf5">
+    <ellipse cx="256" cy="332" rx="118" ry="98" />
+    <ellipse cx="132" cy="230" rx="46" ry="60" transform="rotate(-28 132 230)" />
+    <ellipse cx="206" cy="148" rx="46" ry="62" transform="rotate(-11 206 148)" />
+    <ellipse cx="306" cy="148" rx="46" ry="62" transform="rotate(11 306 148)" />
+    <ellipse cx="380" cy="230" rx="46" ry="60" transform="rotate(28 380 230)" />
+  </g>
+</svg>

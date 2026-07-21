@@ -1,5 +1,7 @@
 node_modules/
 dist/
+# Service worker output from `vite dev` (vite-plugin-pwa)
+dev-dist/
 coverage/
 .DS_Store
 *.local
