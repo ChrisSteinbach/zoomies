@@ -100,3 +100,26 @@ describe("watchLocation", () => {
     expect(geo.clearWatch).toHaveBeenCalledWith(1);
   });
 });
+
+describe("a browser with no Geolocation API", () => {
+  it("reports it instead of throwing on the way up from the composition root", () => {
+    const onError = vi.fn<(err: LocationError) => void>();
+
+    expect(() =>
+      watchLocation({ onPosition: vi.fn(), onError }, undefined),
+    ).not.toThrow();
+    expect(onError).toHaveBeenCalledWith({
+      code: "UNSUPPORTED",
+      message: expect.stringContaining("Geolocation"),
+    });
+  });
+
+  it("hands back a stop function that is safe to call", () => {
+    const stop = watchLocation(
+      { onPosition: vi.fn(), onError: vi.fn() },
+      undefined,
+    );
+
+    expect(() => stop()).not.toThrow();
+  });
+});

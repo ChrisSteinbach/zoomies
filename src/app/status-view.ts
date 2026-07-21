@@ -244,6 +244,19 @@ function needsPosition(reason: LocationErrorCode): StatusContent {
           "No position arrived in time. Somewhere with a clearer view of the sky usually helps.",
         actions: [pick(PICK_POSITION), retryLocation()],
       };
+
+    case "UNSUPPORTED":
+      return {
+        ...base,
+        title: "This browser will not share your location",
+        // Names the usual cause, because "not supported" on its own sends
+        // people to their device settings, where there is nothing to fix. No
+        // "Try again": asking a browser that has no Geolocation API a second
+        // time fails identically.
+        detail:
+          "Location needs a secure connection, so it is unavailable on pages served over plain http. Opening this app over https should bring the permission prompt back.",
+        actions: [pick(PICK_POSITION)],
+      };
   }
 }
 

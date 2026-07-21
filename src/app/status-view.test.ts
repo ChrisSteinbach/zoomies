@@ -554,3 +554,25 @@ describe("renderStatus and assistive technology", () => {
     expect(buttons(container)).toHaveLength(2);
   });
 });
+
+describe("renderStatus, when the browser offers no Geolocation at all", () => {
+  it("names the insecure connection rather than blaming the device", () => {
+    const container = mount();
+    const phase: Phase = { kind: "needs-position", reason: "UNSUPPORTED" };
+
+    renderStatus(container, phase, callbacks());
+
+    expect(words(container)).toContain("secure connection");
+    expect(words(container)).not.toContain("could not find you");
+    expect(words(container)).not.toContain("browser settings");
+  });
+
+  it("still offers a way forward", () => {
+    const container = mount();
+    const phase: Phase = { kind: "needs-position", reason: "UNSUPPORTED" };
+
+    renderStatus(container, phase, callbacks());
+
+    expect(buttonLabels(container)).toEqual(["Set my position on the map"]);
+  });
+});

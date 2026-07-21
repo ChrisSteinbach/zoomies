@@ -1,4 +1,5 @@
 import { defineConfig } from "vite";
+import basicSsl from "@vitejs/plugin-basic-ssl";
 import { VitePWA } from "vite-plugin-pwa";
 
 /**
@@ -26,11 +27,25 @@ export default defineConfig(({ command, isPreview }) => {
       // network — this is a GPS app, so real testing happens on a phone.
       host: "0.0.0.0",
     },
+    preview: {
+      host: "0.0.0.0",
+    },
     build: {
       outDir: "dist",
       emptyOutDir: true,
     },
     plugins: [
+      // HTTPS on the dev server, with a self-signed certificate.
+      //
+      // Not a nicety: the Geolocation API is gated behind a secure context, so
+      // over plain http:// a phone on the LAN never even sees the permission
+      // prompt — the call just fails, and the app can only report that it does
+      // not know where you are. `localhost` is exempt, which is why this is
+      // invisible on a desktop and breaks only on the device the app is for.
+      //
+      // The certificate is self-signed, so the phone shows a warning once per
+      // machine; accept it and geolocation behaves as it will in production.
+      basicSsl(),
       VitePWA({
         // A new build takes over as soon as the browser sees it, so an
         // installed copy can't get stuck on a stale app shell.
