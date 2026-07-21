@@ -421,6 +421,23 @@ describe("the bathing layer, wired", () => {
     expect(bathingSearch.calls).toBe(2);
   });
 
+  it("shows a place found by both layers once, as the park", async () => {
+    const { root, gps, search, bathingSearch } = mount();
+
+    gps.fix(TANTOLUNDEN);
+    await search.answer([TANTO]);
+    bathingChip(root).click();
+    // The same OSM element, re-found by the bathing layer's name regex —
+    // real Stockholm dog parks are named "… Hundbad" and match it.
+    await bathingSearch.answer(
+      [{ ...HUNDBADET, id: TANTO.id, name: TANTO.name }],
+      10_000,
+    );
+
+    expect(parkNames(root)).toEqual(["Tantolundens hundrastgård"]);
+    expect(root.querySelectorAll(".spot-list-kind")).toHaveLength(0);
+  });
+
   it("hands a hundbad to the maps app even when no parks were found", async () => {
     const { root, gps, search, bathingSearch, openUrl } = mount();
 

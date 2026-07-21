@@ -118,8 +118,10 @@ describe("the Overpass query", () => {
 
     await provider.findBathingSpots(59.3293, 18.0686, 3000);
 
-    // There is no single primary tag for a hundbad (spec §4.3), and the last
-    // clause — the name regex — is the one that finds most Swedish ones.
+    // There is no single primary tag for a hundbad (spec §4.3), and the name
+    // regex — the clause that finds most Swedish ones — runs once per indexed
+    // tag family rather than bare: unbounded, it times out the widest radius
+    // in Stockholm (measured 2026-07-21; see buildBathingQuery).
     expect(new URLSearchParams(postedBody).get("data")).toBe(
       [
         "[out:json][timeout:25];",
@@ -127,7 +129,11 @@ describe("the Overpass query", () => {
         '  nwr["leisure"="bathing_place"]["dog"~"^(yes|designated)$"](around:3000,59.3293000,18.0686000);',
         '  nwr["natural"="beach"]["dog"~"^(yes|designated)$"](around:3000,59.3293000,18.0686000);',
         '  nwr["leisure"="swimming_area"]["dog"~"^(yes|designated)$"](around:3000,59.3293000,18.0686000);',
-        '  nwr["name"~"hundbad",i](around:3000,59.3293000,18.0686000);',
+        '  nwr["natural"]["name"~"hundbad",i](around:3000,59.3293000,18.0686000);',
+        '  nwr["leisure"]["name"~"hundbad",i](around:3000,59.3293000,18.0686000);',
+        '  nwr["amenity"]["name"~"hundbad",i](around:3000,59.3293000,18.0686000);',
+        '  nwr["man_made"]["name"~"hundbad",i](around:3000,59.3293000,18.0686000);',
+        '  nwr["place"]["name"~"hundbad",i](around:3000,59.3293000,18.0686000);',
         ");",
         "out center;",
       ].join("\n"),

@@ -100,17 +100,44 @@ function buildDogParkQuery(lat: number, lon: number, radiusM: number): string {
 }
 
 /**
- * The bathing-spot query of docs/spec.md §5: a union, because there is no
- * single primary tag for a hundbad (§4.3).
+ * The tag families the name-regex fallback is allowed to search.
+ *
+ * Not in the spec's version of the query, and load-bearing: a bare
+ * `nwr["name"~"hundbad",i]` runs the regex over every named object in the
+ * disc — every street, shop and bus stop — and, measured on 2026-07-21, that
+ * times out inside the query's own 25-second budget at the 25 km radius
+ * around central Stockholm (the server gave up at 31 s). Since the widest
+ * ring is exactly where a thin layer ends up, the unbounded clause would turn
+ * "no bathing spots within 25 km" into a permanent error in the one city the
+ * spec requires to work (§2.1).
+ *
+ * Requiring an indexed tag family first keeps the regex to feature-shaped
+ * objects. The cost of the bound: a hundbad whose element carries a name and
+ * none of these families is out of reach — and such an element would also
+ * give us nothing to render or grade, so the recall given up is places the
+ * app could only have pointed at, not described.
+ */
+const NAMED_FEATURE_FAMILIES = [
+  "natural",
+  "leisure",
+  "amenity",
+  "man_made",
+  "place",
+] as const;
+
+/**
+ * The bathing-spot query: the union of docs/spec.md §4.3, because there is no
+ * single primary tag for a hundbad.
  *
  * The first three clauses are the tagged patterns — a bathing place, a beach
- * or a swimming area that says something about dogs. The fourth, the
- * case-insensitive name regex, is the Sweden-specific fallback: many hundbad
- * are mapped as generic features with "hundbad" in the name and no `dog=*`
- * tag at all, so without it Swedish coverage is close to useless — which is
- * the one thing this app cannot afford (§2.1). It also finds false positives,
- * which is why what it finds is labelled `name-match` rather than presented
- * as a fact about dogs.
+ * or a swimming area that says something about dogs. The rest are the
+ * Sweden-specific fallback, the case-insensitive name regex bounded to the
+ * {@link NAMED_FEATURE_FAMILIES}: many hundbad are mapped as generic features
+ * with "hundbad" in the name and no `dog=*` tag at all, so without the
+ * fallback Swedish coverage is close to useless — which is the one thing this
+ * app cannot afford (§2.1). It also finds false positives, which is why what
+ * it finds is labelled `name-match` rather than presented as a fact about
+ * dogs.
  *
  * A feature can satisfy several clauses at once; deduplication is
  * {@link toSpots}'s job.
@@ -118,13 +145,16 @@ function buildDogParkQuery(lat: number, lon: number, radiusM: number): string {
 function buildBathingQuery(lat: number, lon: number, radiusM: number): string {
   const near = around(lat, lon, radiusM);
   const allowsDogs = '["dog"~"^(yes|designated)$"]';
+  const namedHundbad = NAMED_FEATURE_FAMILIES.map(
+    (family) => `  nwr["${family}"]["name"~"hundbad",i](around:${near});`,
+  );
   return [
     `[out:json][timeout:${OVERPASS_SERVER_TIMEOUT_S}];`,
     "(",
     `  nwr["leisure"="bathing_place"]${allowsDogs}(around:${near});`,
     `  nwr["natural"="beach"]${allowsDogs}(around:${near});`,
     `  nwr["leisure"="swimming_area"]${allowsDogs}(around:${near});`,
-    `  nwr["name"~"hundbad",i](around:${near});`,
+    ...namedHundbad,
     ");",
     "out center;",
   ].join("\n");

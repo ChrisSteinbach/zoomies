@@ -533,9 +533,26 @@ export function bathingSpotsOf(bathing: BathingLayer): DogSpot[] {
   }
 }
 
-/** Everything a render of this state would put on screen, both layers. */
+/**
+ * Everything a render of this state would put on screen, both layers, each
+ * place once.
+ *
+ * One OSM element can be in both answers: real Stockholm examples are dog
+ * parks named "… Hundbad", tagged `leisure=dog_park` and caught by the
+ * bathing layer's name regex. That is one place, not two — and the park
+ * identity wins, because `leisure=dog_park` is a direct statement about dogs
+ * while a name match is a guess. Without this, the list grows twin rows that
+ * select together and the map draws one pin in whichever colour came last.
+ */
 export function visibleSpotsOf(state: AppState): DogSpot[] {
-  return [...spotsOf(state.phase), ...bathingSpotsOf(state.bathing)];
+  const byId = new Map<string, DogSpot>();
+  for (const spot of [
+    ...spotsOf(state.phase),
+    ...bathingSpotsOf(state.bathing),
+  ]) {
+    if (!byId.has(spot.id)) byId.set(spot.id, spot);
+  }
+  return [...byId.values()];
 }
 
 /**

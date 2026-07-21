@@ -9,7 +9,7 @@ import {
 import type { ExpandingSearch } from "./expanding-search";
 import { watchLocation } from "./location";
 import type { LocationCallbacks, StopFn } from "./location";
-import { bathingSpotsOf, initialState, transition } from "./state-machine";
+import { initialState, transition, visibleSpotsOf } from "./state-machine";
 import type { AppState, Effect, Event, Phase } from "./state-machine";
 import { renderLayerToggle } from "./layer-toggle";
 import { renderSpotList } from "./spot-list";
@@ -24,7 +24,7 @@ import { createAttribution } from "./attribution";
 import { markLoad } from "./load-timeline";
 import { directionsUrl, formatDistance } from "./format";
 import { PlaceProviderError } from "./place-provider";
-import type { DogSpot, LatLon } from "./types";
+import type { LatLon } from "./types";
 
 /**
  * The composition root: the one place that knows every concrete dependency.
@@ -307,8 +307,10 @@ export function composeApp(root: HTMLElement, deps: AppDeps = {}): AppHandle {
 
     const position = currentPosition(phase);
     // One merged set for the map and the list: the layers are one answer to
-    // "what is around me", and the list re-sorts the union by distance.
-    const spots = [...visibleSpots(phase), ...bathingSpotsOf(state.bathing)];
+    // "what is around me", the list re-sorts the union by distance, and the
+    // machine's own idea of visibility decides it — including the rule that a
+    // place found by both layers appears once, as the park it is tagged as.
+    const spots = visibleSpotsOf(state);
     const selectedId = state.selectedId;
 
     // With no position there is no map worth drawing — a world view centred on
@@ -451,26 +453,6 @@ function currentPosition(phase: Phase): LatLon | null {
       return null;
     default:
       return phase.position;
-  }
-}
-
-/**
- * What belongs on screen now.
- *
- * `searching` and `failed` keep showing the last good answer — a refresh in
- * flight, or one that failed, is no reason to blank results the user is
- * reading (docs/spec.md §7.6). `empty` shows nothing, because there genuinely
- * is nothing here and the previous town's parks are not an answer.
- */
-function visibleSpots(phase: Phase): DogSpot[] {
-  switch (phase.kind) {
-    case "ready":
-      return phase.spots;
-    case "searching":
-    case "failed":
-      return phase.staleSpots;
-    default:
-      return [];
   }
 }
 

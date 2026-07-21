@@ -598,6 +598,26 @@ describe("selection across both layers", () => {
 
     expect(state.selectedId).toBeNull();
   });
+
+  it("treats a place found by both layers as the park it is tagged as", () => {
+    // Real Stockholm data: dog parks named "… Hundbad" are caught by the
+    // bathing layer's name regex too. One element, one place — and asking for
+    // directions must route to the park identity, not a name-match twin.
+    const bathingTwin = { ...bathingSpot("way/1", "Tanto hundbad") };
+    const { effects } = run([
+      ...bathingOn,
+      {
+        kind: "bathing-search-succeeded",
+        spots: [bathingTwin],
+        searchedRadiusM: 10_000,
+      },
+      { kind: "directions-requested", id: "way/1" },
+    ]);
+
+    expect(effects).toEqual([
+      { kind: "open-directions", spot: TANTO, origin: null },
+    ]);
+  });
 });
 
 function busyError(): PlaceProviderError {
