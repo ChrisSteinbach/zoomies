@@ -56,7 +56,7 @@ bd show <id>      # detail on one item
 main.ts → compose-app.ts          the only place that knows concrete deps
             ├── state-machine.ts  pure transition(state, event) → effects
             ├── views             spot-list, spot-map, status-view, …
-            └── expanding-search( cache( fair-use( overpass ) ) )
+            └── expanding-search( cache( fair-use( fallback( overpass ) ) ) )
 ```
 
 The state machine is pure — no DOM, no fetch — so permission denial,
@@ -66,13 +66,17 @@ return DOM; none of them owns application state.
 
 Data access is a decorator stack over one `PlaceProvider` that answers a
 single query. Expanding radius decides _how far_ to look, the cache decides
-_whether to ask at all_, and the fair-use guard decides _how often_ — each
-independently testable, and none of them inside the Overpass client.
+_whether to ask at all_, the fair-use guard decides _how often_, and the
+fallback decides _whom_ — trying the public Overpass mirror when the main
+instance says it is full — each independently testable, and none of them
+inside the Overpass client. Both layers (dog parks, and the phase-2 hundbad
+layer) run their own expanding search over the one shared stack.
 
 ## Decisions made at project start
 
 **Data access is interface-first.** All data goes through
-`findDogParks(lat, lon, radiusM)`. The MVP implements it against the live
+`findDogParks(lat, lon, radiusM)` and `findBathingSpots(lat, lon, radiusM)`.
+The MVP implements them against the live
 [Overpass API](https://overpass-api.de/); a later offline implementation
 (Geofabrik + osmium extract) drops in behind the same interface without
 touching the UI. No Overpass-shaped types may leak through that seam.
