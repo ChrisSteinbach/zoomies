@@ -1,0 +1,113 @@
+name: Refresh dataset
+
+# The weekly half of the offline data path (docs/spec.md §5, Option B):
+# cut every dog spot out of the Geofabrik Sweden extract and publish one
+# JSON file where the app already looks (offline-dataset.ts):
+#
+#   https://raw.githubusercontent.com/ChrisSteinbach/zoomies/dataset/dogspots-sweden.json
+#
+# The branch name and the filename are load-bearing halves of that URL —
+# do not vary either. Every step here must fail the job when it fails: a
+# dead cron that publishes nothing is how offline data silently ages, and
+# a red Actions tab is the only place that decay becomes visible.
+on:
+  schedule:
+    # Monday 03:00 UTC. Weekly is plenty for data that changes on the
+    # timescale of municipal construction (spec §5).
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-dataset
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install osmium
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y osmium-tool
+
+      # ~700 MB, well within the runner's disk. The retries ride out
+      # Geofabrik's brief update windows; the descriptive UA identifies
+      # this pipeline to them, as their download guidelines ask.
+      - name: Download the Sweden extract and boundary
+        run: |
+          curl -fL --retry 3 --retry-delay 30 \
+            -A "zoomies-data/0.1 (+https://github.com/ChrisSteinbach/zoomies)" \
+            -o /tmp/sweden.osm.pbf \
+            https://download.geofabrik.de/europe/sweden-latest.osm.pbf
+          curl -fL --retry 3 --retry-delay 30 \
+            -A "zoomies-data/0.1 (+https://github.com/ChrisSteinbach/zoomies)" \
+            -o /tmp/sweden.poly \
+            https://download.geofabrik.de/europe/sweden.poly
+
+      # Filters, converts and gates (assertDatasetSane): if the extract is
+      # broken or the converter regressed, this exits non-zero, writes no
+      # file, and the publish step never runs.
+      - name: Build the dataset
+        run: >
+          npx tsx pipeline/build-dataset.ts
+          --pbf /tmp/sweden.osm.pbf
+          --poly /tmp/sweden.poly
+          --region europe/sweden
+          --out /tmp/dogspots-sweden.json
+
+      # The dataset branch is a publish target like gh-pages, not history:
+      # exactly one orphan commit holding the file and a README, force-
+      # pushed each week. The README exists because ODbL makes this file a
+      # derived database (spec §4.1) — attribution and share-alike must
+      # travel with it, readable by someone who finds the branch cold.
+      - name: Publish to the dataset branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          generated="$(date -u +%Y-%m-%d)"
+          publish="$(mktemp -d)"
+          cp /tmp/dogspots-sweden.json "$publish/dogspots-sweden.json"
+          cat > "$publish/README.md" <<EOF
+          # Zoomies offline dataset
+
+          **dogspots-sweden.json** holds every dog park and dog bathing spot
+          in the Geofabrik europe/sweden extract, pre-converted into the
+          format the [zoomies](https://github.com/ChrisSteinbach/zoomies)
+          app reads. The app fetches it from this branch's raw URL to answer
+          nearby-spots queries without a live Overpass round-trip.
+
+          - Region: europe/sweden
+          - Generated: ${generated}
+
+          The data is © OpenStreetMap contributors. This file is a derived
+          database of OpenStreetMap and is published under the
+          [Open Database License (ODbL) 1.0](https://opendatacommons.org/licenses/odbl/1-0/);
+          share-alike applies to anything derived from it in turn.
+
+          This branch is a publish target, not history: each weekly refresh
+          force-pushes a single orphan commit. The pipeline that generates
+          the file lives in the
+          [zoomies repository](https://github.com/ChrisSteinbach/zoomies).
+          EOF
+          cd "$publish"
+          git init --quiet --initial-branch=dataset
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dogspots-sweden.json README.md
+          git commit --quiet -m "Refresh dataset: europe/sweden, ${generated}"
+          git push --quiet --force \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            dataset:refs/heads/dataset
