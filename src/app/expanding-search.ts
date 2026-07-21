@@ -1,13 +1,15 @@
-import type { PlaceProvider } from "./place-provider";
 import type { DogSpot } from "./types";
 
 /**
  * Searching outwards until there is enough to show (docs/spec.md §7.2).
  *
- * Policy about *how far* to ask, layered on a {@link PlaceProvider} that does
- * exactly one query. It is not a `PlaceProvider` itself, because it answers a
- * richer question than "what is within R metres" — it also reports how far it
- * had to look.
+ * Policy about *how far* to ask, layered on one lookup that does exactly one
+ * query. It takes that lookup as a function rather than a whole provider,
+ * because the policy is per layer: parks and bathing spots widen
+ * independently, to different targets, over the same provider stack.
+ *
+ * The result is not a `PlaceProvider`'s, because it answers a richer question
+ * than "what is within R metres" — it also reports how far it had to look.
  */
 
 /**
@@ -32,6 +34,18 @@ export const SEARCH_RADII_M: readonly number[] = [3_000, 10_000, 25_000];
  */
 export const TARGET_RESULT_COUNT = 5;
 
+/**
+ * The same, for bathing spots — lower, because the layer is thinner.
+ *
+ * Bathing data is best-effort by design (§4.3, §4.5.2): there is no single
+ * primary tag, and the dog subtag is usually the one a mapper omits. Holding
+ * that layer to the parks target of five would widen nearly every search to
+ * 25 km — three queries against a free shared service — chasing results that
+ * mostly are not mapped at all. Three is enough to choose between, honest
+ * about a thin layer, and stops widening while the answers are still nearby.
+ */
+export const BATHING_TARGET_RESULT_COUNT = 3;
+
 /** What a search found, and how far it had to look to find it. */
 export interface ExpandingSearchResult {
   /**
@@ -51,22 +65,37 @@ export interface ExpandingSearchResult {
   radiusM: number;
 }
 
-/** Dog parks near a position, looking further out until there are enough. */
+/** Spots of one layer near a position, looking further out until enough. */
 export type ExpandingSearch = (
   lat: number,
   lon: number,
 ) => Promise<ExpandingSearchResult>;
 
+/** One layer's lookup within a fixed radius: a provider method, unbound. */
+export type SpotFetch = (
+  lat: number,
+  lon: number,
+  radiusM: number,
+) => Promise<DogSpot[]>;
+
+export interface ExpandingSearchOptions {
+  /** How many results are enough. Defaults to {@link TARGET_RESULT_COUNT}. */
+  targetCount?: number;
+}
+
 /**
- * Wraps a provider in the expanding-radius policy.
+ * Wraps one lookup in the expanding-radius policy.
  *
  * Queries are deliberately sequential: each one exists only because the
  * previous answer was too thin, and firing them together would ask a shared
  * service three questions to use the answer to one.
  */
 export function createExpandingSearch(
-  provider: PlaceProvider,
+  fetch: SpotFetch,
+  options: ExpandingSearchOptions = {},
 ): ExpandingSearch {
+  const targetCount = options.targetCount ?? TARGET_RESULT_COUNT;
+
   return async (lat, lon) => {
     // Every radius is a superset of the one before it, so the last answer is
     // the fullest one — there is nothing to merge.
@@ -80,9 +109,9 @@ export function createExpandingSearch(
       // service a bigger version of the question it just failed to answer,
       // and reporting the wider result as if the narrow one had succeeded
       // would hide the failure the UI must show (§7.6).
-      const spots = await provider.findDogParks(lat, lon, radiusM);
+      const spots = await fetch(lat, lon, radiusM);
       found = { spots, radiusM };
-      if (spots.length >= TARGET_RESULT_COUNT) break;
+      if (spots.length >= targetCount) break;
     }
 
     // Zero results after the widest radius is a legitimate answer, not an

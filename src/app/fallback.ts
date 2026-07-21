@@ -46,31 +46,40 @@ export function withFallback(
   primary: PlaceProvider,
   fallback: PlaceProvider,
 ): PlaceProvider {
+  // Both layers get the identical policy: an instance with no free slot has
+  // none for either question, and the mirror is the answer to both.
   return {
-    async findDogParks(lat, lon, radiusM) {
-      try {
-        return await primary.findDogParks(lat, lon, radiusM);
-      } catch (error) {
-        if (!isBusy(error)) throw error;
-        return await askFallback(fallback, error, lat, lon, radiusM);
-      }
-    },
+    findDogParks: (lat, lon, radiusM) =>
+      askEither(
+        () => primary.findDogParks(lat, lon, radiusM),
+        () => fallback.findDogParks(lat, lon, radiusM),
+      ),
+    findBathingSpots: (lat, lon, radiusM) =>
+      askEither(
+        () => primary.findBathingSpots(lat, lon, radiusM),
+        () => fallback.findBathingSpots(lat, lon, radiusM),
+      ),
   };
 }
 
 /**
- * Asks the fallback once, and decides which error tells the truth if it
- * fails too.
+ * Asks the primary, then the fallback once if the primary had no room — and
+ * decides which error tells the truth when the fallback fails too.
  */
-async function askFallback(
-  fallback: PlaceProvider,
-  primaryBusy: PlaceProviderError,
-  lat: number,
-  lon: number,
-  radiusM: number,
+async function askEither(
+  askPrimary: () => Promise<DogSpot[]>,
+  askFallback: () => Promise<DogSpot[]>,
 ): Promise<DogSpot[]> {
+  let primaryBusy: PlaceProviderError;
   try {
-    return await fallback.findDogParks(lat, lon, radiusM);
+    return await askPrimary();
+  } catch (error) {
+    if (!isBusy(error)) throw error;
+    primaryBusy = error;
+  }
+
+  try {
+    return await askFallback();
   } catch (error) {
     throw isBusy(error) ? error : primaryBusy;
   }

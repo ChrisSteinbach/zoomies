@@ -24,6 +24,27 @@ export interface PlaceProvider {
    * Throws {@link PlaceProviderError} for every failure mode.
    */
   findDogParks(lat: number, lon: number, radiusM: number): Promise<DogSpot[]>;
+
+  /**
+   * Dog bathing spots within `radiusM` metres of the given position, in no
+   * particular order — sorting is the caller's job, for the same reason as
+   * above.
+   *
+   * There is no single primary OSM tag for a hundbad. This is a union of four
+   * patterns (docs/spec.md §4.3), and even in Sweden the data is genuinely
+   * sparse, because the dog-related subtag is usually the one a mapper leaves
+   * off. Best-effort by design: expect misses, and read a thin answer as an
+   * honest account of what OSM knows rather than as something broken.
+   *
+   * Same contract as {@link findDogParks} otherwise. An empty array is a
+   * legitimate answer — more often here than for parks — and every failure
+   * mode arrives as a {@link PlaceProviderError}.
+   */
+  findBathingSpots(
+    lat: number,
+    lon: number,
+    radiusM: number,
+  ): Promise<DogSpot[]>;
 }
 
 /**

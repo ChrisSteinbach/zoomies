@@ -1,6 +1,13 @@
+import { parseDogConditional } from "./dog-conditional";
 import { PlaceProviderError } from "./place-provider";
 import type { PlaceProvider } from "./place-provider";
-import type { DogSpot, LatLon, SpotTags } from "./types";
+import type {
+  DogSpot,
+  LatLon,
+  Provenance,
+  SeasonalRule,
+  SpotTags,
+} from "./types";
 
 /**
  * The MVP's data source: the public Overpass API (docs/spec.md §5, Option A).
@@ -66,7 +73,13 @@ export function createOverpassProvider(
     async findDogParks(lat, lon, radiusM) {
       const query = buildDogParkQuery(lat, lon, radiusM);
       const payload = await postQuery(fetchImpl, endpoint, query);
-      return toDogSpots(payload);
+      return toSpots(payload, toDogPark);
+    },
+
+    async findBathingSpots(lat, lon, radiusM) {
+      const query = buildBathingQuery(lat, lon, radiusM);
+      const payload = await postQuery(fetchImpl, endpoint, query);
+      return toSpots(payload, toBathingSpot);
     },
   };
 }
@@ -81,9 +94,45 @@ export function createOverpassProvider(
 function buildDogParkQuery(lat: number, lon: number, radiusM: number): string {
   return [
     `[out:json][timeout:${OVERPASS_SERVER_TIMEOUT_S}];`,
-    `nwr["leisure"="dog_park"](around:${Math.round(radiusM)},${formatCoord(lat)},${formatCoord(lon)});`,
+    `nwr["leisure"="dog_park"](around:${around(lat, lon, radiusM)});`,
     "out center;",
   ].join("\n");
+}
+
+/**
+ * The bathing-spot query of docs/spec.md §5: a union, because there is no
+ * single primary tag for a hundbad (§4.3).
+ *
+ * The first three clauses are the tagged patterns — a bathing place, a beach
+ * or a swimming area that says something about dogs. The fourth, the
+ * case-insensitive name regex, is the Sweden-specific fallback: many hundbad
+ * are mapped as generic features with "hundbad" in the name and no `dog=*`
+ * tag at all, so without it Swedish coverage is close to useless — which is
+ * the one thing this app cannot afford (§2.1). It also finds false positives,
+ * which is why what it finds is labelled `name-match` rather than presented
+ * as a fact about dogs.
+ *
+ * A feature can satisfy several clauses at once; deduplication is
+ * {@link toSpots}'s job.
+ */
+function buildBathingQuery(lat: number, lon: number, radiusM: number): string {
+  const near = around(lat, lon, radiusM);
+  const allowsDogs = '["dog"~"^(yes|designated)$"]';
+  return [
+    `[out:json][timeout:${OVERPASS_SERVER_TIMEOUT_S}];`,
+    "(",
+    `  nwr["leisure"="bathing_place"]${allowsDogs}(around:${near});`,
+    `  nwr["natural"="beach"]${allowsDogs}(around:${near});`,
+    `  nwr["leisure"="swimming_area"]${allowsDogs}(around:${near});`,
+    `  nwr["name"~"hundbad",i](around:${near});`,
+    ");",
+    "out center;",
+  ].join("\n");
+}
+
+/** The arguments of an Overpass `(around:…)` filter: radius, then centre. */
+function around(lat: number, lon: number, radiusM: number): string {
+  return `${Math.round(radiusM)},${formatCoord(lat)},${formatCoord(lon)}`;
 }
 
 /**
@@ -247,12 +296,16 @@ function errorForRemark(remark: string): PlaceProviderError {
 }
 
 /**
- * The Overpass payload as dog spots.
+ * The Overpass payload as dog spots, translated by `toSpot`.
  *
  * Elements we cannot place on a map are dropped rather than emitted at
- * (0, 0): fewer results beat confidently wrong ones (spec §3).
+ * (0, 0): fewer results beat confidently wrong ones (spec §3), and so are
+ * elements the translator itself rejects.
  */
-function toDogSpots(payload: unknown): DogSpot[] {
+function toSpots(
+  payload: unknown,
+  toSpot: (element: unknown) => DogSpot | undefined,
+): DogSpot[] {
   const elements = isRecord(payload) ? payload.elements : undefined;
   if (!Array.isArray(elements)) {
     throw new PlaceProviderError(
@@ -261,18 +314,35 @@ function toDogSpots(payload: unknown): DogSpot[] {
     );
   }
 
-  // Keyed by id, first occurrence winning: the phase-2 union query matches a
-  // feature once per clause it satisfies, and those copies are identical.
+  // Keyed by id, first occurrence winning: the bathing union query matches a
+  // feature once per clause it satisfies, and those copies are identical —
+  // provenance is read from the element's own tags, never from which clause
+  // produced it, so which copy wins cannot change the answer.
   const byId = new Map<string, DogSpot>();
   for (const element of elements as unknown[]) {
-    const spot = toDogSpot(element);
+    const spot = toSpot(element);
     if (spot && !byId.has(spot.id)) byId.set(spot.id, spot);
   }
 
   return [...byId.values()];
 }
 
-function toDogSpot(element: unknown): DogSpot | undefined {
+/** What every feature translates to, before anything kind-specific. */
+interface CommonSpot {
+  /** The fields shared by both layers: identity, name, position, tags. */
+  spot: Omit<DogSpot, "kind" | "provenance" | "seasonal">;
+  /** The element's raw OSM tags, for the decisions that differ by kind. */
+  tags: Record<string, unknown>;
+}
+
+/**
+ * The element→spot skeleton both layers share.
+ *
+ * What differs between a park and a bathing spot is the *claim* made about
+ * dogs — kind, provenance, seasonal rules — not how a feature is read off the
+ * wire, so that part is written once.
+ */
+function toCommonSpot(element: unknown): CommonSpot | undefined {
   if (!isRecord(element)) return undefined;
 
   const { type, id } = element;
@@ -286,19 +356,98 @@ function toDogSpot(element: unknown): DogSpot | undefined {
   const name = tags.name;
 
   return {
-    // Typed id, because plain OSM ids collide across node/way/relation.
-    id: `${type}/${id}`,
+    spot: {
+      // Typed id, because plain OSM ids collide across node/way/relation.
+      id: `${type}/${id}`,
+      // Absent, never a placeholder: many dog parks are genuinely unnamed and
+      // the UI decides what to show instead.
+      ...(typeof name === "string" && name !== "" ? { name } : {}),
+      lat: point.lat,
+      lon: point.lon,
+      tags: toSpotTags(tags),
+    },
+    tags,
+  };
+}
+
+function toDogPark(element: unknown): DogSpot | undefined {
+  const common = toCommonSpot(element);
+  if (!common) return undefined;
+
+  return {
+    ...common.spot,
     kind: "dog_park",
-    // Absent, never a placeholder: many dog parks are genuinely unnamed and
-    // the UI decides what to show instead.
-    ...(typeof name === "string" && name !== "" ? { name } : {}),
-    lat: point.lat,
-    lon: point.lon,
-    tags: toSpotTags(tags),
     // Everything here matched `leisure=dog_park`, which *is* the statement
     // that the place is for dogs.
     provenance: "designated",
+    // No `seasonal`, deliberately: `dog:conditional` describes a beach ban
+    // season, and a dog park is not seasonally closed to dogs. Reading the
+    // tag here would invent a caveat the park layer has no business making.
   };
+}
+
+function toBathingSpot(element: unknown): DogSpot | undefined {
+  const common = toCommonSpot(element);
+  if (!common) return undefined;
+
+  const provenance = bathingProvenance(common.tags);
+  if (!provenance) return undefined;
+
+  const seasonal = seasonalRule(common.tags);
+
+  return {
+    ...common.spot,
+    kind: "bathing_spot",
+    provenance,
+    ...(seasonal ? { seasonal } : {}),
+  };
+}
+
+/**
+ * How strong a claim this feature makes about dogs — or nothing at all, when
+ * it says dogs are not welcome, in which case the caller drops it.
+ *
+ * Read from the element's own tags rather than from which union clause
+ * matched, because Overpass does not say which one did.
+ *
+ * `dog=no` is the exclusion that matters: such a feature can only have
+ * reached us through the name regex, and a beach called "Hundbadet" that has
+ * since been tagged as banning dogs is precisely the confidently wrong pin
+ * the spec forbids (§3). Dropping it costs a result; showing it costs someone
+ * a wasted trip, or a fine.
+ */
+function bathingProvenance(
+  tags: Record<string, unknown>,
+): Provenance | undefined {
+  const dog = tags.dog;
+
+  // Specifically intended for dogs: a dog beach (§4.3).
+  if (dog === "designated") return "designated";
+  // Dogs are allowed, though the place is not for them. `leashed` and
+  // `unleashed` can only arrive through the name clause — the tagged clauses
+  // match `yes|designated` alone — but they still say dogs belong here.
+  if (dog === "yes" || dog === "leashed" || dog === "unleashed") {
+    return "permitted";
+  }
+  if (dog === "no") return undefined;
+
+  // No `dog` tag, or a value nobody has thought about: the word in the name
+  // is the only reason this feature is in the answer, and the UI must say so.
+  return "name-match";
+}
+
+/**
+ * The seasonal ban OSM records for this feature, when it records one.
+ *
+ * Absent `dog:conditional` leaves the field off entirely rather than
+ * asserting "no restriction" — the UI's verify-signage caveat is what covers
+ * that case (§4.5.3), and a value this app cannot read still comes back as
+ * `unparsed` so the caveat sharpens rather than disappears.
+ */
+function seasonalRule(tags: Record<string, unknown>): SeasonalRule | undefined {
+  const conditional = tags["dog:conditional"];
+  if (typeof conditional !== "string" || conditional === "") return undefined;
+  return parseDogConditional(conditional);
 }
 
 /**

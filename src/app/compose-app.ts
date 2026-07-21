@@ -2,7 +2,10 @@ import { createOverpassProvider, OVERPASS_MIRROR_ENDPOINT } from "./overpass";
 import { withFairUse } from "./fair-use";
 import { withFallback } from "./fallback";
 import { withCache } from "./place-cache";
-import { createExpandingSearch } from "./expanding-search";
+import {
+  BATHING_TARGET_RESULT_COUNT,
+  createExpandingSearch,
+} from "./expanding-search";
 import type { ExpandingSearch } from "./expanding-search";
 import { watchLocation } from "./location";
 import type { LocationCallbacks, StopFn } from "./location";
@@ -51,6 +54,12 @@ export interface AppHandle {
   destroy(): void;
 }
 
+/** The two layers of the app, each searching outwards on its own terms. */
+export interface Searches {
+  parks: ExpandingSearch;
+  bathing: ExpandingSearch;
+}
+
 /**
  * The provider stack, outermost first.
  *
@@ -62,22 +71,37 @@ export interface AppHandle {
  * an endpoint at all, mirror included. Fallback sits inside fair use so the
  * mirror is tried before any backoff wait, not after: the other pool of
  * slots first, then wait.
+ *
+ * Both searches share one stack, built once. Only the outermost layer —
+ * *how far* — differs between them, because the bathing layer is thin enough
+ * to need a lower target (§4.3). Everything below is about the shared
+ * service, not the question: two stacks would be two caches, and two fair-use
+ * queues, which is a concurrency limit of four against an instance we
+ * promised at most two.
  */
-export function createSearch(): ExpandingSearch {
-  return createExpandingSearch(
-    withCache(
-      withFairUse(
-        withFallback(
-          createOverpassProvider(),
-          createOverpassProvider({ endpoint: OVERPASS_MIRROR_ENDPOINT }),
-        ),
+export function createSearches(): Searches {
+  const stack = withCache(
+    withFairUse(
+      withFallback(
+        createOverpassProvider(),
+        createOverpassProvider({ endpoint: OVERPASS_MIRROR_ENDPOINT }),
       ),
     ),
   );
+
+  return {
+    parks: createExpandingSearch((lat, lon, radiusM) =>
+      stack.findDogParks(lat, lon, radiusM),
+    ),
+    bathing: createExpandingSearch(
+      (lat, lon, radiusM) => stack.findBathingSpots(lat, lon, radiusM),
+      { targetCount: BATHING_TARGET_RESULT_COUNT },
+    ),
+  };
 }
 
 export function composeApp(root: HTMLElement, deps: AppDeps = {}): AppHandle {
-  const search = deps.search ?? createSearch();
+  const search = deps.search ?? createSearches().parks;
   const watch = deps.watch ?? ((callbacks) => watchLocation(callbacks));
   const openUrl =
     deps.openUrl ?? ((url) => window.open(url, "_blank", "noopener"));

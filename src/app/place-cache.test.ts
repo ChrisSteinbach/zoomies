@@ -31,18 +31,29 @@ function fakeStore(): CacheStore & { entries: Map<string, unknown> } {
   };
 }
 
+/** One plausible hundbad, for the lookups that ask about bathing. */
+function bathingSpot(id: string): DogSpot {
+  return {
+    id,
+    kind: "bathing_spot",
+    name: "Kärsön hundbad",
+    lat: 59.3106,
+    lon: 17.9187,
+    tags: { surface: "sand" },
+    provenance: "name-match",
+  };
+}
+
 /** A provider that answers every lookup the same way, and counts the asking. */
 function providerReturning(spots: DogSpot[]): PlaceProvider & {
   calls: () => number;
 } {
   let calls = 0;
-  return {
-    calls: () => calls,
-    findDogParks: () => {
-      calls++;
-      return Promise.resolve(spots);
-    },
+  const answer = () => {
+    calls++;
+    return Promise.resolve(spots);
   };
+  return { calls: () => calls, findDogParks: answer, findBathingSpots: answer };
 }
 
 describe("reusing an answer", () => {
@@ -103,15 +114,92 @@ describe("reusing an answer", () => {
     expect(provider.calls()).toBe(1);
   });
 
-  it("stores answers under a key the schema cleanup recognises", async () => {
+  it("stores both layers' answers under keys the schema cleanup recognises", async () => {
     const store = fakeStore();
     const cached = withCache(providerReturning([dogSpot("node/1")]), { store });
 
     await cached.findDogParks(59.329, 18.0688, 3_000);
+    await cached.findBathingSpots(59.329, 18.0688, 3_000);
 
     // A key outside the current prefixes would be swept away on next launch.
-    const [key] = [...store.entries.keys()];
-    expect(CURRENT_KEY_PREFIXES.some((p) => key.startsWith(p))).toBe(true);
+    const keys = [...store.entries.keys()];
+    expect(keys).toHaveLength(2);
+    for (const key of keys) {
+      expect(CURRENT_KEY_PREFIXES.some((p) => key.startsWith(p))).toBe(true);
+    }
+  });
+});
+
+describe("keeping the two layers apart", () => {
+  it("does not answer a bathing lookup with the parks found in that cell", async () => {
+    const provider: PlaceProvider = {
+      findDogParks: () => Promise.resolve([dogSpot("way/58082448")]),
+      findBathingSpots: () => Promise.resolve([bathingSpot("way/4711")]),
+    };
+    const cached = withCache(provider, { store: fakeStore() });
+
+    await cached.findDogParks(59.329, 18.0688, 3_000);
+    const bathing = await cached.findBathingSpots(59.329, 18.0688, 3_000);
+
+    // Same cell, same radius, different question — and "nothing here" is the
+    // answer most likely to be wrongly reused.
+    expect(bathing).toEqual([bathingSpot("way/4711")]);
+  });
+
+  it("asks once for two bathing lookups from the same spot", async () => {
+    const provider = providerReturning([bathingSpot("way/4711")]);
+    const cached = withCache(provider, { store: fakeStore() });
+
+    await cached.findBathingSpots(59.329, 18.0688, 3_000);
+    const second = await cached.findBathingSpots(59.329, 18.0688, 3_000);
+
+    expect(provider.calls()).toBe(1);
+    expect(second).toEqual([bathingSpot("way/4711")]);
+  });
+
+  it("brings a seasonal ban back intact", async () => {
+    const banned: DogSpot = {
+      ...bathingSpot("way/4711"),
+      // The Stockholm summer ban, as OSM writes it (docs/spec.md §4.5.3).
+      seasonal: {
+        kind: "ban",
+        from: { month: 6, day: 1 },
+        to: { month: 8, day: 31 },
+      },
+    };
+    const provider = providerReturning([banned]);
+    const cached = withCache(provider, { store: fakeStore() });
+
+    await cached.findBathingSpots(59.329, 18.0688, 3_000);
+    const second = await cached.findBathingSpots(59.329, 18.0688, 3_000);
+
+    expect(second).toEqual([banned]);
+    expect(provider.calls()).toBe(1);
+  });
+
+  it("treats a stored ban window it cannot read as nothing stored", async () => {
+    const store = fakeStore();
+    const provider = providerReturning([bathingSpot("way/4711")]);
+    const cached = withCache(provider, { store });
+
+    await cached.findBathingSpots(59.329, 18.0688, 3_000);
+    for (const key of store.entries.keys()) {
+      store.entries.set(key, {
+        storedAt: Date.now(),
+        spots: [
+          {
+            ...bathingSpot("way/4711"),
+            seasonal: { kind: "ban", from: { month: 13, day: 1 }, to: "Aug" },
+          },
+        ],
+      });
+    }
+    const spots = await cached.findBathingSpots(59.329, 18.0688, 3_000);
+
+    // A half-read ban is worse than none: the UI would work out that today is
+    // fine at a beach where a dog is illegal.
+    expect(spots).toEqual([bathingSpot("way/4711")]);
+    expect(provider.calls()).toBe(2);
   });
 });
 
@@ -198,16 +286,18 @@ describe("when a cached answer cannot be trusted", () => {
 
   it("does not remember a failure", async () => {
     let calls = 0;
+    const findDogParks = () => {
+      calls++;
+      if (calls === 1) {
+        return Promise.reject(
+          new PlaceProviderError("timeout", "Overpass took too long"),
+        );
+      }
+      return Promise.resolve([dogSpot("node/1")]);
+    };
     const provider: PlaceProvider = {
-      findDogParks: () => {
-        calls++;
-        if (calls === 1) {
-          return Promise.reject(
-            new PlaceProviderError("timeout", "Overpass took too long"),
-          );
-        }
-        return Promise.resolve([dogSpot("node/1")]);
-      },
+      findDogParks,
+      findBathingSpots: findDogParks,
     };
     const cached = withCache(provider, { store: fakeStore() });
 

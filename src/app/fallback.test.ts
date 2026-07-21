@@ -15,6 +15,18 @@ function dogSpot(id: string): DogSpot {
   };
 }
 
+/** One plausible hundbad, for the lookups that ask about bathing. */
+function bathingSpot(id: string): DogSpot {
+  return {
+    id,
+    kind: "bathing_spot",
+    lat: 59.3106,
+    lon: 18.2775,
+    tags: {},
+    provenance: "name-match",
+  };
+}
+
 /** What Overpass sends when a query slot is not available: 504, not 429. */
 function busy(retryAfterMs?: number): PlaceProviderError {
   return new PlaceProviderError("busy", "Overpass has no free slot", {
@@ -23,14 +35,28 @@ function busy(retryAfterMs?: number): PlaceProviderError {
   });
 }
 
-/** A provider that always answers the same way. */
-function providerReturning(spots: DogSpot[]): PlaceProvider {
-  return { findDogParks: () => Promise.resolve(spots) };
+/** A provider that answers both lookups the same way, and counts the asking. */
+function providerReturning(spots: DogSpot[]): PlaceProvider & {
+  calls: () => number;
+} {
+  let calls = 0;
+  const answer = () => {
+    calls++;
+    return Promise.resolve(spots);
+  };
+  return { calls: () => calls, findDogParks: answer, findBathingSpots: answer };
 }
 
-/** A provider that always fails the same way. */
-function providerFailing(error: Error): PlaceProvider {
-  return { findDogParks: () => Promise.reject(error) };
+/** A provider that fails both lookups the same way, and counts the asking. */
+function providerFailing(error: Error): PlaceProvider & {
+  calls: () => number;
+} {
+  let calls = 0;
+  const fail = () => {
+    calls++;
+    return Promise.reject(error);
+  };
+  return { calls: () => calls, findDogParks: fail, findBathingSpots: fail };
 }
 
 /** The failure a lookup produced, or a test failure if it produced none. */
@@ -48,14 +74,8 @@ async function failureFrom(
 
 describe("when the primary answers", () => {
   it("returns its spots without asking the fallback", async () => {
-    let fallbackCalls = 0;
     const primary = providerReturning([dogSpot("node/1")]);
-    const fallback: PlaceProvider = {
-      findDogParks: () => {
-        fallbackCalls++;
-        return Promise.resolve([dogSpot("node/2")]);
-      },
-    };
+    const fallback = providerReturning([dogSpot("node/2")]);
 
     const spots = await withFallback(primary, fallback).findDogParks(
       59.3,
@@ -64,26 +84,14 @@ describe("when the primary answers", () => {
     );
 
     expect(spots).toEqual([dogSpot("node/1")]);
-    expect(fallbackCalls).toBe(0);
+    expect(fallback.calls()).toBe(0);
   });
 });
 
 describe("when the primary has no free slot", () => {
   it("falls over to the fallback and returns its spots", async () => {
-    let primaryCalls = 0;
-    let fallbackCalls = 0;
-    const primary: PlaceProvider = {
-      findDogParks: () => {
-        primaryCalls++;
-        return Promise.reject(busy());
-      },
-    };
-    const fallback: PlaceProvider = {
-      findDogParks: () => {
-        fallbackCalls++;
-        return Promise.resolve([dogSpot("node/2")]);
-      },
-    };
+    const primary = providerFailing(busy());
+    const fallback = providerReturning([dogSpot("node/2")]);
 
     const spots = await withFallback(primary, fallback).findDogParks(
       59.3,
@@ -92,18 +100,20 @@ describe("when the primary has no free slot", () => {
     );
 
     expect(spots).toEqual([dogSpot("node/2")]);
-    expect(primaryCalls).toBe(1);
-    expect(fallbackCalls).toBe(1);
+    expect(primary.calls()).toBe(1);
+    expect(fallback.calls()).toBe(1);
   });
 
   it("asks the fallback for the same position and radius", async () => {
     let asked: number[] = [];
     const primary = providerFailing(busy());
+    const record = (lat: number, lon: number, radiusM: number) => {
+      asked = [lat, lon, radiusM];
+      return Promise.resolve([]);
+    };
     const fallback: PlaceProvider = {
-      findDogParks: (lat, lon, radiusM) => {
-        asked = [lat, lon, radiusM];
-        return Promise.resolve([]);
-      },
+      findDogParks: record,
+      findBathingSpots: record,
     };
 
     await withFallback(primary, fallback).findDogParks(
@@ -151,86 +161,118 @@ describe("when the primary has no free slot", () => {
 
 describe("failures that are not an invitation to try elsewhere", () => {
   it("propagates a rate limit without asking the fallback", async () => {
-    let fallbackCalls = 0;
     const primaryError = new PlaceProviderError(
       "rate-limited",
       "Overpass is rate-limiting us",
       { status: 429 },
     );
     const primary = providerFailing(primaryError);
-    const fallback: PlaceProvider = {
-      findDogParks: () => {
-        fallbackCalls++;
-        return Promise.resolve([]);
-      },
-    };
+    const fallback = providerReturning([]);
 
     const error = await failureFrom(
       withFallback(primary, fallback).findDogParks(59.3, 18.1, 3_000),
     );
 
     expect(error).toBe(primaryError);
-    expect(fallbackCalls).toBe(0);
+    expect(fallback.calls()).toBe(0);
   });
 
   it("propagates a timeout without asking the fallback", async () => {
-    let fallbackCalls = 0;
     const primaryError = new PlaceProviderError(
       "timeout",
       "Overpass did not answer in time",
     );
     const primary = providerFailing(primaryError);
-    const fallback: PlaceProvider = {
-      findDogParks: () => {
-        fallbackCalls++;
-        return Promise.resolve([]);
-      },
-    };
+    const fallback = providerReturning([]);
 
     const error = await failureFrom(
       withFallback(primary, fallback).findDogParks(59.3, 18.1, 3_000),
     );
 
     expect(error).toBe(primaryError);
-    expect(fallbackCalls).toBe(0);
+    expect(fallback.calls()).toBe(0);
   });
 
   it("propagates a server error without asking the fallback", async () => {
-    let fallbackCalls = 0;
     const primaryError = new PlaceProviderError(
       "http-error",
       "Overpass answered 500 Internal Server Error",
       { status: 500 },
     );
     const primary = providerFailing(primaryError);
-    const fallback: PlaceProvider = {
-      findDogParks: () => {
-        fallbackCalls++;
-        return Promise.resolve([]);
-      },
-    };
+    const fallback = providerReturning([]);
 
     const error = await failureFrom(
       withFallback(primary, fallback).findDogParks(59.3, 18.1, 3_000),
     );
 
     expect(error).toBe(primaryError);
-    expect(fallbackCalls).toBe(0);
+    expect(fallback.calls()).toBe(0);
   });
 
   it("propagates something that is not a provider failure at all", async () => {
-    let fallbackCalls = 0;
     const primary = providerFailing(new TypeError("boom"));
-    const fallback: PlaceProvider = {
-      findDogParks: () => {
-        fallbackCalls++;
-        return Promise.resolve([]);
-      },
-    };
+    const fallback = providerReturning([]);
 
     await expect(
       withFallback(primary, fallback).findDogParks(59.3, 18.1, 3_000),
     ).rejects.toBeInstanceOf(TypeError);
-    expect(fallbackCalls).toBe(0);
+    expect(fallback.calls()).toBe(0);
+  });
+});
+
+describe("the bathing layer, through the same door", () => {
+  it("answers from the primary's bathing spots when it has room", async () => {
+    const primary: PlaceProvider = {
+      // A distinct answer per layer, so a bathing lookup that quietly asked
+      // about parks would show up here rather than pass.
+      findDogParks: () => Promise.resolve([dogSpot("node/1")]),
+      findBathingSpots: () => Promise.resolve([bathingSpot("way/4711")]),
+    };
+    const fallback = providerReturning([]);
+
+    const spots = await withFallback(primary, fallback).findBathingSpots(
+      59.3,
+      18.1,
+      3_000,
+    );
+
+    expect(spots).toEqual([bathingSpot("way/4711")]);
+    expect(fallback.calls()).toBe(0);
+  });
+
+  it("falls over to the mirror's bathing spots when the primary is full", async () => {
+    const primary = providerFailing(busy());
+    const fallback: PlaceProvider = {
+      findDogParks: () => Promise.resolve([dogSpot("node/1")]),
+      findBathingSpots: () => Promise.resolve([bathingSpot("way/4711")]),
+    };
+
+    const spots = await withFallback(primary, fallback).findBathingSpots(
+      59.3,
+      18.1,
+      3_000,
+    );
+
+    expect(spots).toEqual([bathingSpot("way/4711")]);
+  });
+
+  it("propagates a rate limit without asking the mirror", async () => {
+    const primaryError = new PlaceProviderError(
+      "rate-limited",
+      "Overpass is rate-limiting us",
+      { status: 429 },
+    );
+    const primary = providerFailing(primaryError);
+    const fallback = providerReturning([bathingSpot("way/4711")]);
+
+    const error = await failureFrom(
+      withFallback(primary, fallback).findBathingSpots(59.3, 18.1, 3_000),
+    );
+
+    // Dodging our own rate limit by changing host is the antisocial move
+    // docs/spec.md §5 warns against, whichever layer asked.
+    expect(error).toBe(primaryError);
+    expect(fallback.calls()).toBe(0);
   });
 });
