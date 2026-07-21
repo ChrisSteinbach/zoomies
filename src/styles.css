@@ -259,12 +259,18 @@ body {
   display: none;
 }
 
-/* The picker covers everything, including the sheet — while it is open,
- * choosing a position is the only thing to do. */
+/* The picker covers everything, including the sheet and the credit bar — while
+ * it is open, choosing a position is the only thing to do.
+ *
+ * The number matters. At the sheet's own z-index of 1000 the picker lost the
+ * tie on DOM order and opened *behind* it, so "Set my position on the map" —
+ * the only way out of a refused permission — looked like a dead button. That
+ * is the dead end it exists to prevent. Its own map carries the OSM tile
+ * credit, and the app's data credit returns the moment it closes. */
 .app-picker {
   position: absolute;
   inset: 0;
-  z-index: 1000;
+  z-index: 1200;
   background: #fff;
 }
 
@@ -292,13 +298,35 @@ body {
   bottom: 0;
   left: 0;
   z-index: 1100;
-  padding: 0.35rem 0.75rem calc(0.4rem + env(safe-area-inset-bottom));
+  padding: 0.4rem 0.75rem calc(0.45rem + env(safe-area-inset-bottom));
+  font-size: 0.7rem;
+  line-height: 1.35;
   text-align: center;
-  background: rgb(255 255 255 / 92%);
+
+  /* Opaque, not translucent: the list scrolls behind it, and text sliding
+   * under half-visible text reads as a rendering fault rather than a credit. */
+  background: #fff;
+  border-top: 1px solid #e4e7e9;
 }
 
-/* Room for the credit bar, so the last row of the list is never underneath
- * it. Keep in step with the padding above. */
+.app > .attribution p {
+  margin: 0;
+}
+
+/* Room for the credit bar, so the last result is never behind it.
+ * --app-credit-height is measured from the bar itself in compose-app.ts,
+ * because the number of lines it wraps to depends on the width of the screen
+ * and every guess was wrong on a phone. */
 .app .spot-drawer-content {
-  padding-bottom: calc(3.4rem + env(safe-area-inset-bottom));
+  padding-bottom: var(--app-credit-height, 3.5rem);
+}
+
+/* Keep the results clear of the handle.
+ *
+ * Open, the handle sits over the panel's left edge, vertically centred — which
+ * is where the middle row's first characters are. tour-guide can overlap
+ * freely because its drawer holds a map; ours holds text, and a 36px button
+ * across the start of a park's name is not a detail you can read past. */
+.app .spot-drawer.open .spot-drawer-content {
+  padding-left: 2.75rem;
 }

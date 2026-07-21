@@ -1,10 +1,19 @@
 // @vitest-environment jsdom
 //
-// The sheet's own behaviour: the state it opens in, what it announces, and
-// that the drag gesture is actually attached to it. The gesture's own corners
-// are covered in drawer-gesture.test.ts. How the sheet *feels* — whether the
-// handle is thumb-reachable, whether the map is still readable behind it — is a
-// browser check at 375×667, not something jsdom can answer.
+// The drawer's own behaviour: the state it opens in, what it announces, that
+// the drag gesture is actually attached to it, and — the one the user paid for
+// — that its handle is still on screen once the drawer is closed. The
+// gesture's own corners are covered in drawer-gesture.test.ts. How the drawer
+// *feels* — whether the handle falls under a thumb, whether the map is still
+// readable beside it — is a browser check at 375×667, not something jsdom can
+// answer.
+//
+// Where the handle is *painted* is a different question from how it feels, and
+// jsdom will answer that one as long as the stylesheet is in the document —
+// which is why the test guarding the closed handle puts it there by hand.
+
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import { createSpotDrawer } from "./spot-drawer";
 
@@ -22,10 +31,10 @@ if (typeof globalThis.PointerEvent === "undefined") {
 
 function pointerEvent(
   type: string,
-  opts: { clientY: number; timeStamp: number },
+  opts: { clientX: number; timeStamp: number },
 ): PointerEvent {
   const e = new PointerEvent(type, {
-    clientY: opts.clientY,
+    clientX: opts.clientX,
     pointerId: 1,
     bubbles: true,
   });
@@ -50,23 +59,45 @@ function handleOf(container: HTMLElement): HTMLButtonElement {
 }
 
 /**
- * Give the sheet a size. jsdom lays nothing out, so every element measures
- * zero — and the travel distance the gesture divides by comes from measuring
- * the panel against its handle.
+ * Give the panel a width. jsdom lays nothing out, so every element measures
+ * zero — and the travel distance the gesture divides by is the panel's width.
+ * 375 is a phone, where the panel covers the screen.
  */
-function size(panel: HTMLElement, handle: HTMLElement): void {
-  Object.defineProperty(panel, "offsetHeight", {
+function size(panel: HTMLElement): void {
+  Object.defineProperty(panel, "offsetWidth", {
     configurable: true,
-    value: 400,
+    value: 375,
   });
-  Object.defineProperty(handle, "offsetHeight", {
-    configurable: true,
-    value: 44,
-  });
+}
+
+/**
+ * Put the drawer's own stylesheet in the document. The module imports it, but
+ * vitest stubs CSS imports away to nothing, so the file has to be read off disk
+ * for any of it to reach jsdom's cascade.
+ */
+function applyDrawerStyles(): void {
+  const style = document.createElement("style");
+  style.textContent = readFileSync(
+    join(import.meta.dirname, "spot-drawer.css"),
+    "utf8",
+  );
+  document.head.append(style);
+}
+
+/**
+ * How far an element's own transform moves it along X, as a fraction of its own
+ * width. Both halves of the drawer are written that way: the panel parks itself
+ * a full width to the right, and the handle pulls itself most of a width back.
+ */
+function xShift(element: Element): number {
+  const { transform } = getComputedStyle(element);
+  const match = /translate(?:X)?\(\s*(-?[\d.]+)%/.exec(transform);
+  return match ? Number(match[1]) / 100 : 0;
 }
 
 afterEach(() => {
   document.body.replaceChildren();
+  for (const style of document.head.querySelectorAll("style")) style.remove();
 });
 
 describe("createSpotDrawer", () => {
@@ -133,20 +164,61 @@ describe("createSpotDrawer", () => {
     expect(handle.getAttribute("aria-label")).toMatch(/list/i);
   });
 
-  it("closes when the handle is flicked down", () => {
+  it("leaves the handle on screen once the drawer is closed", () => {
+    const container = mount();
+    applyDrawerStyles();
+    const drawer = createSpotDrawer(container);
+    const handle = handleOf(container);
+
+    drawer.close();
+
+    // The panel parks a full width to the right: entirely off the screen.
+    expect(xShift(drawer.panel)).toBe(1);
+    // The handle does not go with it — it hangs back over the map by most of
+    // its own width. This is the whole bargain: close the drawer and the one
+    // thing that brings it back is still there to be tapped. An earlier
+    // version let the handle leave with the panel, and the list was gone for
+    // good.
+    expect(xShift(handle)).toBeLessThanOrEqual(-0.5);
+    expect(getComputedStyle(handle).display).not.toBe("none");
+    expect(getComputedStyle(handle).visibility).toBe("visible");
+  });
+
+  it("comes back when the handle is tapped after closing", () => {
     const container = mount();
     const drawer = createSpotDrawer(container);
     const handle = handleOf(container);
-    size(drawer.panel, handle);
+    size(drawer.panel);
 
+    drawer.close();
+
+    // A tap: down and up in the same place, then the browser's own click.
     handle.dispatchEvent(
-      pointerEvent("pointerdown", { clientY: 200, timeStamp: 0 }),
+      pointerEvent("pointerdown", { clientX: 360, timeStamp: 0 }),
     );
     handle.dispatchEvent(
-      pointerEvent("pointermove", { clientY: 240, timeStamp: 20 }),
+      pointerEvent("pointerup", { clientX: 360, timeStamp: 90 }),
+    );
+    handle.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(drawer.isOpen()).toBe(true);
+  });
+
+  it("closes when the handle is flicked back towards the edge", () => {
+    const container = mount();
+    const drawer = createSpotDrawer(container);
+    const handle = handleOf(container);
+    size(drawer.panel);
+
+    // Open, the handle sits against the panel's left edge, over the map.
+    handle.dispatchEvent(
+      pointerEvent("pointerdown", { clientX: 18, timeStamp: 0 }),
     );
     handle.dispatchEvent(
-      pointerEvent("pointerup", { clientY: 240, timeStamp: 20 }),
+      pointerEvent("pointermove", { clientX: 48, timeStamp: 20 }),
+    );
+    handle.dispatchEvent(
+      pointerEvent("pointerup", { clientX: 48, timeStamp: 20 }),
     );
 
     expect(drawer.isOpen()).toBe(false);
@@ -156,24 +228,24 @@ describe("createSpotDrawer", () => {
     const container = mount();
     const drawer = createSpotDrawer(container);
     const handle = handleOf(container);
-    size(drawer.panel, handle);
+    size(drawer.panel);
 
     // Slow, so the decision is made on position rather than velocity: 100px of
-    // a 356px travel, which is not enough to mean it.
+    // a 375px travel, which is not enough to mean it.
     handle.dispatchEvent(
-      pointerEvent("pointerdown", { clientY: 200, timeStamp: 0 }),
+      pointerEvent("pointerdown", { clientX: 18, timeStamp: 0 }),
     );
     handle.dispatchEvent(
-      pointerEvent("pointermove", { clientY: 300, timeStamp: 800 }),
+      pointerEvent("pointermove", { clientX: 118, timeStamp: 800 }),
     );
     handle.dispatchEvent(
-      pointerEvent("pointerup", { clientY: 300, timeStamp: 800 }),
+      pointerEvent("pointerup", { clientX: 118, timeStamp: 800 }),
     );
 
     expect(drawer.isOpen()).toBe(true);
   });
 
-  it("destroy() takes the sheet off the screen", () => {
+  it("destroy() takes the drawer off the screen", () => {
     const container = mount();
     const drawer = createSpotDrawer(container);
 

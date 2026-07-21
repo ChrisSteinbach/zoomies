@@ -23,10 +23,10 @@ if (typeof globalThis.PointerEvent === "undefined") {
 
 function pointerEvent(
   type: string,
-  opts: { clientY: number; timeStamp?: number },
+  opts: { clientX: number; timeStamp?: number },
 ): PointerEvent {
   const e = new PointerEvent(type, {
-    clientY: opts.clientY,
+    clientX: opts.clientX,
     pointerId: 1,
     bubbles: true,
   });
@@ -49,12 +49,12 @@ function createDrawer() {
   handle.releasePointerCapture = vi.fn();
 
   let opened = false;
-  const drawerHeight = 400;
+  const drawerWidth = 400;
 
   const destroy = setupDrawerGesture({
     panel,
     handle,
-    getDrawerHeight: () => drawerHeight,
+    getDrawerWidth: () => drawerWidth,
     open: () => {
       opened = true;
       panel.classList.add("open");
@@ -66,36 +66,36 @@ function createDrawer() {
     isOpen: () => opened,
   });
 
-  return { panel, handle, destroy, isOpen: () => opened, drawerHeight };
+  return { panel, handle, destroy, isOpen: () => opened, drawerWidth };
 }
 
-/** Where a thumb lands on the handle of a closed sheet: near the bottom of the
- *  screen. */
-const HANDLE_AT_REST = 620;
+/** Where a thumb lands on the handle of a closed drawer: at the right edge of
+ *  the screen. */
+const HANDLE_AT_REST = 360;
 
 afterEach(() => {
   while (document.body.firstChild) document.body.firstChild.remove();
 });
 
 describe("drawer gesture", () => {
-  it("drag up past 50% threshold opens the drawer", () => {
-    const { handle, isOpen, drawerHeight } = createDrawer();
+  it("drag left past 50% threshold opens the drawer", () => {
+    const { handle, isOpen, drawerWidth } = createDrawer();
 
-    // Start drag at the bottom edge (closed state)
+    // Start drag at right edge (closed state)
     handle.dispatchEvent(
-      pointerEvent("pointerdown", { clientY: HANDLE_AT_REST, timeStamp: 0 }),
+      pointerEvent("pointerdown", { clientX: HANDLE_AT_REST, timeStamp: 0 }),
     );
-    // Drag up past 50% of drawer height
+    // Drag left past 50% of drawer width
     handle.dispatchEvent(
       pointerEvent("pointermove", {
-        clientY: HANDLE_AT_REST - drawerHeight * 0.6,
+        clientX: HANDLE_AT_REST - drawerWidth * 0.6,
         timeStamp: 500,
       }),
     );
     // Release slowly (low velocity)
     handle.dispatchEvent(
       pointerEvent("pointerup", {
-        clientY: HANDLE_AT_REST - drawerHeight * 0.6,
+        clientX: HANDLE_AT_REST - drawerWidth * 0.6,
         timeStamp: 500,
       }),
     );
@@ -103,21 +103,21 @@ describe("drawer gesture", () => {
     expect(isOpen()).toBe(true);
   });
 
-  it("drag up under 50% threshold snaps back closed", () => {
-    const { handle, isOpen, drawerHeight } = createDrawer();
+  it("drag left under 50% threshold snaps back closed", () => {
+    const { handle, isOpen, drawerWidth } = createDrawer();
 
     handle.dispatchEvent(
-      pointerEvent("pointerdown", { clientY: HANDLE_AT_REST, timeStamp: 0 }),
+      pointerEvent("pointerdown", { clientX: HANDLE_AT_REST, timeStamp: 0 }),
     );
     handle.dispatchEvent(
       pointerEvent("pointermove", {
-        clientY: HANDLE_AT_REST - drawerHeight * 0.3,
+        clientX: HANDLE_AT_REST - drawerWidth * 0.3,
         timeStamp: 500,
       }),
     );
     handle.dispatchEvent(
       pointerEvent("pointerup", {
-        clientY: HANDLE_AT_REST - drawerHeight * 0.3,
+        clientX: HANDLE_AT_REST - drawerWidth * 0.3,
         timeStamp: 500,
       }),
     );
@@ -125,49 +125,49 @@ describe("drawer gesture", () => {
     expect(isOpen()).toBe(false);
   });
 
-  it("fast swipe up opens regardless of distance", () => {
+  it("fast swipe left opens regardless of distance", () => {
     const { handle, isOpen } = createDrawer();
 
     // Fast swipe: small distance but very short time → high velocity
     handle.dispatchEvent(
-      pointerEvent("pointerdown", { clientY: HANDLE_AT_REST, timeStamp: 0 }),
+      pointerEvent("pointerdown", { clientX: HANDLE_AT_REST, timeStamp: 0 }),
     );
     handle.dispatchEvent(
-      pointerEvent("pointermove", { clientY: 590, timeStamp: 20 }),
+      pointerEvent("pointermove", { clientX: 330, timeStamp: 20 }),
     );
-    // velocity = -30 / 20 = -1.5 px/ms (exceeds 0.5 threshold, negative = up)
+    // velocity = -30 / 20 = -1.5 px/ms (exceeds 0.5 threshold, negative = left)
     handle.dispatchEvent(
-      pointerEvent("pointerup", { clientY: 590, timeStamp: 20 }),
+      pointerEvent("pointerup", { clientX: 330, timeStamp: 20 }),
     );
 
     expect(isOpen()).toBe(true);
   });
 
-  it("fast swipe down closes regardless of distance", () => {
+  it("fast swipe right closes regardless of distance", () => {
     const { handle, isOpen } = createDrawer();
 
-    // Open with a fast swipe up first
+    // Open with a fast swipe left first
     handle.dispatchEvent(
-      pointerEvent("pointerdown", { clientY: HANDLE_AT_REST, timeStamp: 0 }),
+      pointerEvent("pointerdown", { clientX: HANDLE_AT_REST, timeStamp: 0 }),
     );
     handle.dispatchEvent(
-      pointerEvent("pointermove", { clientY: 590, timeStamp: 20 }),
+      pointerEvent("pointermove", { clientX: 330, timeStamp: 20 }),
     );
     handle.dispatchEvent(
-      pointerEvent("pointerup", { clientY: 590, timeStamp: 20 }),
+      pointerEvent("pointerup", { clientX: 330, timeStamp: 20 }),
     );
     expect(isOpen()).toBe(true);
 
-    // Now swipe down fast to close
+    // Now swipe right fast to close
     handle.dispatchEvent(
-      pointerEvent("pointerdown", { clientY: 300, timeStamp: 1000 }),
+      pointerEvent("pointerdown", { clientX: 100, timeStamp: 1000 }),
     );
     handle.dispatchEvent(
-      pointerEvent("pointermove", { clientY: 330, timeStamp: 1020 }),
+      pointerEvent("pointermove", { clientX: 130, timeStamp: 1020 }),
     );
-    // velocity = 30 / 20 = 1.5 px/ms (positive = down = close)
+    // velocity = 30 / 20 = 1.5 px/ms (positive = right = close)
     handle.dispatchEvent(
-      pointerEvent("pointerup", { clientY: 330, timeStamp: 1020 }),
+      pointerEvent("pointerup", { clientX: 130, timeStamp: 1020 }),
     );
 
     expect(isOpen()).toBe(false);
@@ -178,20 +178,20 @@ describe("drawer gesture", () => {
 
     // Click (pointerdown + pointerup + click with no movement) → opens
     handle.dispatchEvent(
-      pointerEvent("pointerdown", { clientY: HANDLE_AT_REST, timeStamp: 0 }),
+      pointerEvent("pointerdown", { clientX: HANDLE_AT_REST, timeStamp: 0 }),
     );
     handle.dispatchEvent(
-      pointerEvent("pointerup", { clientY: HANDLE_AT_REST, timeStamp: 100 }),
+      pointerEvent("pointerup", { clientX: HANDLE_AT_REST, timeStamp: 100 }),
     );
     handle.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(isOpen()).toBe(true);
 
     // Click again → closes
     handle.dispatchEvent(
-      pointerEvent("pointerdown", { clientY: HANDLE_AT_REST, timeStamp: 200 }),
+      pointerEvent("pointerdown", { clientX: HANDLE_AT_REST, timeStamp: 200 }),
     );
     handle.dispatchEvent(
-      pointerEvent("pointerup", { clientY: HANDLE_AT_REST, timeStamp: 300 }),
+      pointerEvent("pointerup", { clientX: HANDLE_AT_REST, timeStamp: 300 }),
     );
     handle.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(isOpen()).toBe(false);
@@ -201,10 +201,10 @@ describe("drawer gesture", () => {
     const { handle, isOpen } = createDrawer();
 
     handle.dispatchEvent(
-      pointerEvent("pointerdown", { clientY: HANDLE_AT_REST, timeStamp: 0 }),
+      pointerEvent("pointerdown", { clientX: HANDLE_AT_REST, timeStamp: 0 }),
     );
     handle.dispatchEvent(
-      pointerEvent("pointerup", { clientY: HANDLE_AT_REST, timeStamp: 100 }),
+      pointerEvent("pointerup", { clientX: HANDLE_AT_REST, timeStamp: 100 }),
     );
 
     // Nothing yet: the toggle waits for the browser's own click. Acting on
@@ -220,7 +220,7 @@ describe("drawer gesture", () => {
     const { handle } = createDrawer();
 
     handle.dispatchEvent(
-      pointerEvent("pointerdown", { clientY: HANDLE_AT_REST, timeStamp: 0 }),
+      pointerEvent("pointerdown", { clientX: HANDLE_AT_REST, timeStamp: 0 }),
     );
     // A finger that has not moved is still a tap in progress. Capturing now
     // breaks the click event chain on mobile.
@@ -228,7 +228,7 @@ describe("drawer gesture", () => {
 
     handle.dispatchEvent(
       pointerEvent("pointermove", {
-        clientY: HANDLE_AT_REST - 2,
+        clientX: HANDLE_AT_REST - 2,
         timeStamp: 10,
       }),
     );
@@ -238,7 +238,7 @@ describe("drawer gesture", () => {
     // the moves coming once the finger leaves the handle.
     handle.dispatchEvent(
       pointerEvent("pointermove", {
-        clientY: HANDLE_AT_REST - 80,
+        clientX: HANDLE_AT_REST - 80,
         timeStamp: 50,
       }),
     );
@@ -249,7 +249,7 @@ describe("drawer gesture", () => {
     const { handle, panel } = createDrawer();
 
     handle.dispatchEvent(
-      pointerEvent("pointerdown", { clientY: HANDLE_AT_REST, timeStamp: 0 }),
+      pointerEvent("pointerdown", { clientX: HANDLE_AT_REST, timeStamp: 0 }),
     );
     // No dragging class yet — haven't moved
     expect(panel.classList.contains("dragging")).toBe(false);
@@ -257,7 +257,7 @@ describe("drawer gesture", () => {
     // Small move within click threshold — still no dragging
     handle.dispatchEvent(
       pointerEvent("pointermove", {
-        clientY: HANDLE_AT_REST - 2,
+        clientX: HANDLE_AT_REST - 2,
         timeStamp: 25,
       }),
     );
@@ -265,61 +265,61 @@ describe("drawer gesture", () => {
 
     // Move past threshold
     handle.dispatchEvent(
-      pointerEvent("pointermove", { clientY: 300, timeStamp: 50 }),
+      pointerEvent("pointermove", { clientX: 280, timeStamp: 50 }),
     );
     expect(panel.classList.contains("dragging")).toBe(true);
 
     handle.dispatchEvent(
-      pointerEvent("pointerup", { clientY: 300, timeStamp: 500 }),
+      pointerEvent("pointerup", { clientX: 280, timeStamp: 500 }),
     );
     expect(panel.classList.contains("dragging")).toBe(false);
   });
 
   it("clamps drag to valid range", () => {
-    const { handle, panel, drawerHeight } = createDrawer();
+    const { handle, panel, drawerWidth } = createDrawer();
 
     handle.dispatchEvent(
-      pointerEvent("pointerdown", { clientY: HANDLE_AT_REST, timeStamp: 0 }),
+      pointerEvent("pointerdown", { clientX: HANDLE_AT_REST, timeStamp: 0 }),
     );
     // Drag way past fully open (negative offset)
     handle.dispatchEvent(
       pointerEvent("pointermove", {
-        clientY: HANDLE_AT_REST - drawerHeight * 2,
+        clientX: HANDLE_AT_REST - drawerWidth * 2,
         timeStamp: 50,
       }),
     );
 
-    // Transform should be clamped to translateY(0) (fully open)
-    expect(panel.style.transform).toBe("translateY(0px)");
+    // Transform should be clamped to translateX(0) (fully open)
+    expect(panel.style.transform).toBe("translateX(0px)");
 
     handle.dispatchEvent(
       pointerEvent("pointerup", {
-        clientY: HANDLE_AT_REST - drawerHeight * 2,
+        clientX: HANDLE_AT_REST - drawerWidth * 2,
         timeStamp: 500,
       }),
     );
   });
 
   it("clamps drag to not exceed fully closed", () => {
-    const { handle, panel, drawerHeight } = createDrawer();
+    const { handle, panel, drawerWidth } = createDrawer();
 
     handle.dispatchEvent(
-      pointerEvent("pointerdown", { clientY: HANDLE_AT_REST, timeStamp: 0 }),
+      pointerEvent("pointerdown", { clientX: HANDLE_AT_REST, timeStamp: 0 }),
     );
-    // Drag down past fully closed
+    // Drag right past fully closed
     handle.dispatchEvent(
       pointerEvent("pointermove", {
-        clientY: HANDLE_AT_REST + drawerHeight,
+        clientX: HANDLE_AT_REST + drawerWidth,
         timeStamp: 50,
       }),
     );
 
-    // Transform should be clamped to drawerHeight (fully closed)
-    expect(panel.style.transform).toBe(`translateY(${drawerHeight}px)`);
+    // Transform should be clamped to drawerWidth (fully closed)
+    expect(panel.style.transform).toBe(`translateX(${drawerWidth}px)`);
 
     handle.dispatchEvent(
       pointerEvent("pointerup", {
-        clientY: HANDLE_AT_REST + drawerHeight,
+        clientX: HANDLE_AT_REST + drawerWidth,
         timeStamp: 500,
       }),
     );
@@ -329,13 +329,13 @@ describe("drawer gesture", () => {
     const { handle, panel } = createDrawer();
 
     handle.dispatchEvent(
-      pointerEvent("pointerdown", { clientY: HANDLE_AT_REST, timeStamp: 0 }),
+      pointerEvent("pointerdown", { clientX: HANDLE_AT_REST, timeStamp: 0 }),
     );
     handle.dispatchEvent(
-      pointerEvent("pointermove", { clientY: 300, timeStamp: 50 }),
+      pointerEvent("pointermove", { clientX: 280, timeStamp: 50 }),
     );
     handle.dispatchEvent(
-      pointerEvent("pointerup", { clientY: 300, timeStamp: 500 }),
+      pointerEvent("pointerup", { clientX: 280, timeStamp: 500 }),
     );
 
     expect(panel.style.transform).toBe("");
@@ -348,7 +348,7 @@ describe("drawer gesture", () => {
 
     // Dispatching events should have no effect
     handle.dispatchEvent(
-      pointerEvent("pointerdown", { clientY: HANDLE_AT_REST, timeStamp: 0 }),
+      pointerEvent("pointerdown", { clientX: HANDLE_AT_REST, timeStamp: 0 }),
     );
     expect(panel.classList.contains("dragging")).toBe(false);
   });
@@ -358,7 +358,7 @@ describe("drawer gesture", () => {
 
     // First finger starts drag
     const down1 = new PointerEvent("pointerdown", {
-      clientY: HANDLE_AT_REST,
+      clientX: HANDLE_AT_REST,
       pointerId: 1,
       bubbles: true,
     });
@@ -367,7 +367,7 @@ describe("drawer gesture", () => {
 
     handle.dispatchEvent(
       new PointerEvent("pointermove", {
-        clientY: 590,
+        clientX: 330,
         pointerId: 1,
         bubbles: true,
       }),
@@ -377,7 +377,7 @@ describe("drawer gesture", () => {
     // Second finger tries to start — should be ignored
     handle.dispatchEvent(
       new PointerEvent("pointerdown", {
-        clientY: 400,
+        clientX: 200,
         pointerId: 2,
         bubbles: true,
       }),
@@ -386,7 +386,7 @@ describe("drawer gesture", () => {
     // Move from second pointer — should be ignored
     handle.dispatchEvent(
       new PointerEvent("pointermove", {
-        clientY: 100,
+        clientX: 100,
         pointerId: 2,
         bubbles: true,
       }),
@@ -395,16 +395,16 @@ describe("drawer gesture", () => {
     // Up from second pointer — should be ignored, gesture still active
     handle.dispatchEvent(
       new PointerEvent("pointerup", {
-        clientY: 100,
+        clientX: 100,
         pointerId: 2,
         bubbles: true,
       }),
     );
     expect(panel.classList.contains("dragging")).toBe(true);
 
-    // First pointer finishes with a fast swipe up to open
+    // First pointer finishes with a fast swipe left to open
     const up = new PointerEvent("pointerup", {
-      clientY: 590,
+      clientX: 330,
       pointerId: 1,
       bubbles: true,
     });
@@ -419,13 +419,13 @@ describe("drawer gesture", () => {
     const { handle, panel, isOpen } = createDrawer();
 
     handle.dispatchEvent(
-      pointerEvent("pointerdown", { clientY: HANDLE_AT_REST, timeStamp: 0 }),
+      pointerEvent("pointerdown", { clientX: HANDLE_AT_REST, timeStamp: 0 }),
     );
     handle.dispatchEvent(
-      pointerEvent("pointermove", { clientY: 400, timeStamp: 50 }),
+      pointerEvent("pointermove", { clientX: 200, timeStamp: 50 }),
     );
     handle.dispatchEvent(
-      pointerEvent("pointercancel", { clientY: 400, timeStamp: 100 }),
+      pointerEvent("pointercancel", { clientX: 200, timeStamp: 100 }),
     );
 
     expect(panel.classList.contains("dragging")).toBe(false);

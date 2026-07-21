@@ -70,8 +70,16 @@ export function composeApp(root: HTMLElement, deps: AppDeps = {}): AppHandle {
     deps.openUrl ?? ((url) => window.open(url, "_blank", "noopener"));
   const createPicker = deps.createPicker ?? createMapPicker;
 
-  const { mapElement, drawer, statusElement, listElement, pickerElement } =
-    buildShell(root);
+  const {
+    mapElement,
+    drawer,
+    statusElement,
+    listElement,
+    pickerElement,
+    creditElement,
+  } = buildShell(root);
+
+  const releaseCredit = reserveRoomForCredit(root, creditElement);
 
   let state: AppState = initialState;
   let stopWatching: StopFn | null = null;
@@ -214,11 +222,39 @@ export function composeApp(root: HTMLElement, deps: AppDeps = {}): AppHandle {
     destroy() {
       stopWatching?.();
       picker?.destroy();
+      releaseCredit();
       map.destroy();
       drawer.destroy();
       root.replaceChildren();
     },
   };
+}
+
+/**
+ * Keep `--app-credit-height` equal to the credit bar's real height.
+ *
+ * The bar is pinned over the sheet, so the sheet has to leave room for it or
+ * the last result sits underneath. Measured rather than guessed: the credit
+ * wraps to one, two or three lines depending on the width of the screen, and a
+ * hardcoded reserve was wrong on a phone — which is where it mattered.
+ *
+ * Returns a function that stops observing.
+ */
+function reserveRoomForCredit(
+  root: HTMLElement,
+  credit: HTMLElement,
+): () => void {
+  const sync = () => {
+    root.style.setProperty("--app-credit-height", `${credit.offsetHeight}px`);
+  };
+  sync();
+
+  // Absent in the test environment, where nothing has a height anyway.
+  if (typeof ResizeObserver !== "function") return () => {};
+
+  const observer = new ResizeObserver(sync);
+  observer.observe(credit);
+  return () => observer.disconnect();
 }
 
 interface Shell {
@@ -227,10 +263,11 @@ interface Shell {
   statusElement: HTMLElement;
   listElement: HTMLElement;
   pickerElement: HTMLElement;
+  creditElement: HTMLElement;
 }
 
 /**
- * The app's furniture: a map with a sheet over it, the status above the list
+ * The app's furniture: a map with the sheet over it, the status above the list
  * inside that sheet, and the attribution outside both.
  *
  * The attribution sits in the shell rather than in any view because it is a
@@ -248,7 +285,7 @@ function buildShell(root: HTMLElement): Shell {
   pickerElement.className = "app-picker";
   pickerElement.hidden = true;
 
-  root.append(mapElement, pickerElement);
+  root.append(mapElement);
 
   const drawer = createSpotDrawer(root);
 
@@ -259,9 +296,23 @@ function buildShell(root: HTMLElement): Shell {
   listElement.className = "app-list";
 
   drawer.element.append(statusElement, listElement);
-  root.append(createAttribution());
 
-  return { mapElement, drawer, statusElement, listElement, pickerElement };
+  const creditElement = createAttribution();
+
+  // The picker goes on last so DOM order agrees with its z-index. It is the
+  // only modal here, and it once lost a z-index tie to the sheet and opened
+  // behind it — which made the sole escape from a refused permission look like
+  // a dead button. Two reasons to be in front are better than one.
+  root.append(creditElement, pickerElement);
+
+  return {
+    mapElement,
+    drawer,
+    statusElement,
+    listElement,
+    pickerElement,
+    creditElement,
+  };
 }
 
 /** Where the user is, as far as the current phase knows. */
