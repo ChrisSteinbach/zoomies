@@ -1,0 +1,89 @@
+/*
+ * The bottom sheet. Enough styling to work on its own; the app stylesheet is
+ * free to override any of it. The sheet is positioned against the bottom of its
+ * container, so that container has to be positioned and has to have a height —
+ * a viewport-height region with the map behind it.
+ */
+
+.spot-drawer {
+  /* The height of the grab handle, which stays on screen when the sheet is
+     down. The closed transform and the gesture's travel distance are both
+     derived from it, so there is one number. */
+  --spot-drawer-handle: 2.75rem;
+
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+
+  /* Above Leaflet's controls, which stop at 1000. */
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+
+  /* Never the whole screen: the map has to stay visible behind it, or the
+     sheet is just a list with extra steps. */
+  max-height: 70%;
+  border-radius: 1rem 1rem 0 0;
+  background: #fff;
+  box-shadow: 0 -0.25rem 1rem rgb(0 0 0 / 20%);
+
+  /* Closed: pushed down until only the handle is left. */
+  transform: translateY(calc(100% - var(--spot-drawer-handle)));
+  transition: transform 0.3s ease;
+  will-change: transform;
+}
+
+.spot-drawer.open {
+  transform: translateY(0);
+}
+
+/* While a finger is on it the panel follows the finger, and a transition would
+   make it lag behind. */
+.spot-drawer.dragging {
+  transition: none;
+}
+
+.spot-drawer-handle {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  height: var(--spot-drawer-handle);
+  padding: 0;
+  border: none;
+  border-radius: 1rem 1rem 0 0;
+  background: none;
+  cursor: pointer;
+
+  /* Without this the browser claims the vertical drag for scrolling and the
+     sheet never moves. */
+  touch-action: none;
+  user-select: none;
+}
+
+.spot-drawer-grip {
+  width: 2.5rem;
+  height: 0.25rem;
+  border-radius: 0.125rem;
+  background: #c4c4c4;
+}
+
+.spot-drawer-handle:focus-visible {
+  outline: 3px solid #1a6b3c;
+  outline-offset: -3px;
+}
+
+.spot-drawer-content {
+  /* The list scrolls inside the sheet; the sheet itself does not grow. */
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+
+  /* Clear of the home indicator on a phone with no bezel. */
+  padding-bottom: env(safe-area-inset-bottom);
+
+  /* A drag that starts on the list should scroll the list, not fight the
+     sheet — which is why the gesture is bound to the handle alone. */
+  overscroll-behavior: contain;
+}
