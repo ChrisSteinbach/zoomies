@@ -1,0 +1,13 @@
+dist/
+dev-dist/
+node_modules/
+coverage/
+.beads/
+.claude/
+
+# Hand-wrapped prose that predates the toolchain. Prettier's markdown
+# normalisation (emphasis markers, table padding, blank lines around lists)
+# would rewrite them wholesale for no benefit. Drop these lines if you ever
+# want them formatted.
+AGENTS.md
+docs/
