@@ -6,6 +6,7 @@ import {
   withFairUse,
 } from "./fair-use";
 import { PlaceProviderError } from "./place-provider";
+import type { PlaceProvider } from "./place-provider";
 import type { DogSpot } from "./types";
 
 /** One plausible dog park, so a successful lookup has something to return. */
@@ -19,6 +20,30 @@ function dogSpot(id: string): DogSpot {
     provenance: "designated",
   };
 }
+
+/** One plausible hundbad, for the lookups that ask about bathing. */
+function bathingSpot(id: string): DogSpot {
+  return {
+    id,
+    kind: "bathing_spot",
+    lat: 59.3106,
+    lon: 18.2775,
+    tags: {},
+    provenance: "name-match",
+  };
+}
+
+/**
+ * The bathing half of a provider, for the tests that drive the park lookup.
+ *
+ * Fair use gives both lookups one policy and one queue, so which of them a
+ * test drives is usually beside the point — and a test that never asks about
+ * bathing should say so out loud.
+ */
+const bathingNotAsked: Pick<PlaceProvider, "findBathingSpots"> = {
+  findBathingSpots: () =>
+    Promise.reject(new Error("this test does not ask about bathing")),
+};
 
 /** The failure a lookup produced, or a test failure if it produced none. */
 async function failureFrom(
@@ -58,6 +83,7 @@ describe("keeping the number of requests down", () => {
   it("runs at most two lookups at a time", async () => {
     let started = 0;
     const guarded = withFairUse({
+      ...bathingNotAsked,
       findDogParks: () => {
         started++;
         return new Promise<DogSpot[]>(() => {
@@ -74,10 +100,34 @@ describe("keeping the number of requests down", () => {
     expect(started).toBe(2);
   });
 
+  it("counts bathing lookups against the same two slots as parks", async () => {
+    let started = 0;
+    const busyEitherWay = () => {
+      started++;
+      return new Promise<DogSpot[]>(() => {
+        // Never answers: the test is about what was allowed to start.
+      });
+    };
+    const guarded = withFairUse({
+      findDogParks: busyEitherWay,
+      findBathingSpots: busyEitherWay,
+    });
+
+    void guarded.findDogParks(59.3, 18.1, 3_000);
+    void guarded.findBathingSpots(59.3, 18.1, 3_000);
+    void guarded.findBathingSpots(59.3, 18.1, 10_000);
+    await settle();
+
+    // Two at a time is a promise to the shared instance, which sees one
+    // stream of requests and does not care which layer asked.
+    expect(started).toBe(2);
+  });
+
   it("starts the queued lookup as soon as a slot frees", async () => {
     const answer: ((spots: DogSpot[]) => void)[] = [];
     let started = 0;
     const guarded = withFairUse({
+      ...bathingNotAsked,
       findDogParks: () => {
         started++;
         return new Promise<DogSpot[]>((resolve) => answer.push(resolve));
@@ -97,6 +147,7 @@ describe("keeping the number of requests down", () => {
   it("gives the slot back when a lookup fails", async () => {
     let started = 0;
     const guarded = withFairUse({
+      ...bathingNotAsked,
       findDogParks: () => {
         started++;
         if (started === 1) {
@@ -122,6 +173,7 @@ describe("keeping the number of requests down", () => {
   it("asks the provider for exactly what it was asked for", async () => {
     let asked: number[] = [];
     const guarded = withFairUse({
+      ...bathingNotAsked,
       findDogParks: (lat, lon, radiusM) => {
         asked = [lat, lon, radiusM];
         return Promise.resolve([dogSpot("node/1")]);
@@ -139,6 +191,7 @@ describe("when Overpass says to slow down", () => {
   it("waits as long as the server asked before trying again", async () => {
     let calls = 0;
     const guarded = withFairUse({
+      ...bathingNotAsked,
       findDogParks: () => {
         calls++;
         return calls === 1
@@ -158,6 +211,7 @@ describe("when Overpass says to slow down", () => {
   it("backs off on its own when the server gave no hint", async () => {
     let calls = 0;
     const guarded = withFairUse({
+      ...bathingNotAsked,
       findDogParks: () => {
         calls++;
         return calls === 1
@@ -174,9 +228,31 @@ describe("when Overpass says to slow down", () => {
     await expect(lookup).resolves.toEqual([dogSpot("node/1")]);
   });
 
+  it("waits and tries again for a bathing lookup too", async () => {
+    let calls = 0;
+    const guarded = withFairUse({
+      // A distinct answer, so a bathing lookup that quietly asked about parks
+      // would show up here rather than pass.
+      findDogParks: () => Promise.resolve([dogSpot("node/1")]),
+      findBathingSpots: () => {
+        calls++;
+        return calls === 1
+          ? Promise.reject(refusal())
+          : Promise.resolve([bathingSpot("way/4711")]);
+      },
+    });
+
+    const lookup = guarded.findBathingSpots(59.3, 18.1, 3_000);
+    await vi.advanceTimersByTimeAsync(INITIAL_BACKOFF_MS);
+
+    await expect(lookup).resolves.toEqual([bathingSpot("way/4711")]);
+    expect(calls).toBe(2);
+  });
+
   it("waits longer each time it is refused again", async () => {
     let calls = 0;
     const guarded = withFairUse({
+      ...bathingNotAsked,
       findDogParks: () => {
         calls++;
         return Promise.reject(refusal());
@@ -197,6 +273,7 @@ describe("when Overpass says to slow down", () => {
   it("stops trying after a capped number of retries", async () => {
     let calls = 0;
     const guarded = withFairUse({
+      ...bathingNotAsked,
       findDogParks: () => {
         calls++;
         return Promise.reject(refusal());
@@ -215,6 +292,7 @@ describe("when Overpass says to slow down", () => {
   it("refuses to hold a lookup open for minutes on end", async () => {
     let calls = 0;
     const guarded = withFairUse({
+      ...bathingNotAsked,
       findDogParks: () => {
         calls++;
         return Promise.reject(refusal(10 * 60_000));
@@ -231,6 +309,7 @@ describe("when Overpass says to slow down", () => {
   it("keeps its slot while backing off, so nothing else fires at a busy service", async () => {
     const asked: number[] = [];
     const guarded = withFairUse({
+      ...bathingNotAsked,
       findDogParks: (_lat, _lon, radiusM) => {
         asked.push(radiusM);
         return radiusM === 3_000 && asked.length === 1
@@ -256,6 +335,7 @@ describe("when the failure is not a refusal", () => {
   it("surfaces a timeout rather than repeating a 25-second query", async () => {
     let calls = 0;
     const guarded = withFairUse({
+      ...bathingNotAsked,
       findDogParks: () => {
         calls++;
         return Promise.reject(
@@ -275,6 +355,7 @@ describe("when the failure is not a refusal", () => {
   it("surfaces a response it cannot parse straight away", async () => {
     let calls = 0;
     const guarded = withFairUse({
+      ...bathingNotAsked,
       findDogParks: () => {
         calls++;
         return Promise.reject(
@@ -291,6 +372,7 @@ describe("when the failure is not a refusal", () => {
 
   it("passes on something that is not a provider failure at all", async () => {
     const guarded = withFairUse({
+      ...bathingNotAsked,
       findDogParks: () => Promise.reject(new TypeError("boom")),
     });
 
@@ -311,6 +393,7 @@ describe("a service that is merely full", () => {
   it("waits and tries again, exactly as it does for a rate limit", async () => {
     let calls = 0;
     const guarded = withFairUse({
+      ...bathingNotAsked,
       findDogParks: () => {
         calls++;
         return calls === 1 ? Promise.reject(noFreeSlot()) : Promise.resolve([]);

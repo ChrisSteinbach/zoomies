@@ -48,24 +48,41 @@ export const BACKOFF_FACTOR = 2;
  */
 export const MAX_BACKOFF_MS = 30_000;
 
+/** One lookup of one layer: the shape both provider methods share. */
+type Lookup = PlaceProvider["findDogParks"];
+
 /**
  * Wraps a provider in the fair-use guards.
  *
  * Each wrapper owns its own queue, so wrap the provider once and share it —
- * two wrappers around the same service are two independent limits.
+ * two wrappers around the same service are two independent limits. Both
+ * lookups on one wrapper draw on that single queue: parks and bathing spots
+ * are the same shared instance answering the same user, and a limit that
+ * counted them separately would be a limit of four.
  */
 export function withFairUse(provider: PlaceProvider): PlaceProvider {
   const slots = createSlots(MAX_CONCURRENT_REQUESTS);
 
-  return {
-    async findDogParks(lat, lon, radiusM) {
+  const guarded =
+    (lookup: Lookup): Lookup =>
+    async (lat, lon, radiusM) => {
       await slots.take();
       try {
-        return await attempt(provider, lat, lon, radiusM);
+        return await attempt(() => lookup(lat, lon, radiusM));
       } finally {
         slots.release();
       }
-    },
+    };
+
+  return {
+    // Called through rather than passed by reference: an unbound method loses
+    // the provider it belongs to.
+    findDogParks: guarded((lat, lon, radiusM) =>
+      provider.findDogParks(lat, lon, radiusM),
+    ),
+    findBathingSpots: guarded((lat, lon, radiusM) =>
+      provider.findBathingSpots(lat, lon, radiusM),
+    ),
   };
 }
 
@@ -76,15 +93,10 @@ export function withFairUse(provider: PlaceProvider): PlaceProvider {
  * let a queued lookup fire at a service that has just refused us, which is
  * the polling the spec rules out.
  */
-async function attempt(
-  provider: PlaceProvider,
-  lat: number,
-  lon: number,
-  radiusM: number,
-): Promise<DogSpot[]> {
+async function attempt(ask: () => Promise<DogSpot[]>): Promise<DogSpot[]> {
   for (let retries = 0; ; retries++) {
     try {
-      return await provider.findDogParks(lat, lon, radiusM);
+      return await ask();
     } catch (error) {
       const wait = waitBeforeRetry(error, retries);
       if (wait === undefined) throw error;

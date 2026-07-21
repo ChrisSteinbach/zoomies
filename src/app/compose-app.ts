@@ -1,12 +1,17 @@
-import { createOverpassProvider } from "./overpass";
+import { createOverpassProvider, OVERPASS_MIRROR_ENDPOINT } from "./overpass";
 import { withFairUse } from "./fair-use";
+import { withFallback } from "./fallback";
 import { withCache } from "./place-cache";
-import { createExpandingSearch } from "./expanding-search";
+import {
+  BATHING_TARGET_RESULT_COUNT,
+  createExpandingSearch,
+} from "./expanding-search";
 import type { ExpandingSearch } from "./expanding-search";
 import { watchLocation } from "./location";
 import type { LocationCallbacks, StopFn } from "./location";
-import { initialState, transition } from "./state-machine";
+import { initialState, transition, visibleSpotsOf } from "./state-machine";
 import type { AppState, Effect, Event, Phase } from "./state-machine";
+import { renderLayerToggle } from "./layer-toggle";
 import { renderSpotList } from "./spot-list";
 import { renderStatus } from "./status-view";
 import { createSpotMap } from "./spot-map";
@@ -19,7 +24,7 @@ import { createAttribution } from "./attribution";
 import { markLoad } from "./load-timeline";
 import { directionsUrl, formatDistance } from "./format";
 import { PlaceProviderError } from "./place-provider";
-import type { DogSpot, LatLon } from "./types";
+import type { LatLon } from "./types";
 
 /**
  * The composition root: the one place that knows every concrete dependency.
@@ -34,6 +39,8 @@ import type { DogSpot, LatLon } from "./types";
 /** Injection points, so the wiring can be tested without a network or a GPS. */
 export interface AppDeps {
   search?: ExpandingSearch;
+  /** The bathing layer's own search — same shape, thinner target. */
+  bathingSearch?: ExpandingSearch;
   watch?: (callbacks: LocationCallbacks) => StopFn;
   /** How to hand off to the maps app. Replaced in tests; `window.open` live. */
   openUrl?: (url: string) => void;
@@ -50,22 +57,73 @@ export interface AppHandle {
   destroy(): void;
 }
 
+/** The two layers of the app, each searching outwards on its own terms. */
+export interface Searches {
+  parks: ExpandingSearch;
+  bathing: ExpandingSearch;
+}
+
 /**
  * The provider stack, outermost first.
  *
  * Expanding radius asks *how far*, the cache asks *whether at all*, fair use
- * asks *how often*, and Overpass answers one question at a time. The order is
- * load-bearing: the cache must sit inside the expansion so each radius is
- * cached separately, and outside fair use so a cache hit never takes a slot.
+ * asks *how often*, fallback asks *whom*, and Overpass answers one question
+ * at a time. The order is load-bearing: the cache must sit inside the
+ * expansion so each radius is cached separately, and outside fair use so a
+ * cache hit never takes a slot — which also means a cache hit never reaches
+ * an endpoint at all, mirror included. Fallback sits inside fair use so the
+ * mirror is tried before any backoff wait, not after: the other pool of
+ * slots first, then wait.
+ *
+ * Both searches share one stack, built once. Only the outermost layer —
+ * *how far* — differs between them, because the bathing layer is thin enough
+ * to need a lower target (§4.3). Everything below is about the shared
+ * service, not the question: two stacks would be two caches, and two fair-use
+ * queues, which is a concurrency limit of four against an instance we
+ * promised at most two.
  */
-export function createSearch(): ExpandingSearch {
-  return createExpandingSearch(
-    withCache(withFairUse(createOverpassProvider())),
+export function createSearches(): Searches {
+  const stack = withCache(
+    withFairUse(
+      withFallback(
+        createOverpassProvider(),
+        createOverpassProvider({ endpoint: OVERPASS_MIRROR_ENDPOINT }),
+      ),
+    ),
   );
+
+  return {
+    parks: createExpandingSearch((lat, lon, radiusM) =>
+      stack.findDogParks(lat, lon, radiusM),
+    ),
+    bathing: createExpandingSearch(
+      (lat, lon, radiusM) => stack.findBathingSpots(lat, lon, radiusM),
+      { targetCount: BATHING_TARGET_RESULT_COUNT },
+    ),
+  };
+}
+
+/**
+ * The two searches the app runs with: injected where given, the real stack
+ * where not — built at most once, so an injected half never conjures a
+ * second live stack for the other half to sit on.
+ */
+function resolveSearches(deps: AppDeps): {
+  search: ExpandingSearch;
+  bathingSearch: ExpandingSearch;
+} {
+  if (deps.search && deps.bathingSearch) {
+    return { search: deps.search, bathingSearch: deps.bathingSearch };
+  }
+  const built = createSearches();
+  return {
+    search: deps.search ?? built.parks,
+    bathingSearch: deps.bathingSearch ?? built.bathing,
+  };
 }
 
 export function composeApp(root: HTMLElement, deps: AppDeps = {}): AppHandle {
-  const search = deps.search ?? createSearch();
+  const { search, bathingSearch } = resolveSearches(deps);
   const watch = deps.watch ?? ((callbacks) => watchLocation(callbacks));
   const openUrl =
     deps.openUrl ?? ((url) => window.open(url, "_blank", "noopener"));
@@ -75,6 +133,7 @@ export function composeApp(root: HTMLElement, deps: AppDeps = {}): AppHandle {
     mapElement,
     drawer,
     statusElement,
+    layersElement,
     listElement,
     pickerElement,
     creditElement,
@@ -91,6 +150,9 @@ export function composeApp(root: HTMLElement, deps: AppDeps = {}): AppHandle {
    * letting it land would quietly replace fresh results with stale ones.
    */
   let searchToken = 0;
+  /** The bathing layer's own counter — the layers refresh independently, so
+   *  one layer's new question must not disown the other's pending answer. */
+  let bathingToken = 0;
 
   const map: SpotMapHandle = createSpotMap(mapElement, {
     onSelect: (id) => dispatch({ kind: "spot-selected", id }),
@@ -145,6 +207,10 @@ export function composeApp(root: HTMLElement, deps: AppDeps = {}): AppHandle {
         runSearch(effect.position);
         return;
 
+      case "search-bathing":
+        runBathingSearch(effect.position);
+        return;
+
       case "open-picker":
         openPicker();
         return;
@@ -190,6 +256,33 @@ export function composeApp(root: HTMLElement, deps: AppDeps = {}): AppHandle {
     );
   }
 
+  /**
+   * Like {@link runSearch}, without the load-timeline marks: those instrument
+   * the cold start, and this layer only ever runs at a user's request, after
+   * the app is up.
+   */
+  function runBathingSearch({ lat, lon }: LatLon): void {
+    const token = ++bathingToken;
+
+    bathingSearch(lat, lon).then(
+      ({ spots, radiusM }) => {
+        if (token !== bathingToken) return;
+        dispatch({
+          kind: "bathing-search-succeeded",
+          spots,
+          searchedRadiusM: radiusM,
+        });
+      },
+      () => {
+        // The layer's failure handling needs no diagnosis: its note offers a
+        // retry whatever went wrong, and the primary search is the surface
+        // that explains provider failures in detail.
+        if (token !== bathingToken) return;
+        dispatch({ kind: "bathing-search-failed" });
+      },
+    );
+  }
+
   function openPicker(): void {
     picker?.destroy();
     pickerElement.hidden = false;
@@ -213,8 +306,12 @@ export function composeApp(root: HTMLElement, deps: AppDeps = {}): AppHandle {
     });
 
     const position = currentPosition(phase);
-    const spots = visibleSpots(phase);
-    const selectedId = phase.kind === "ready" ? phase.selectedId : null;
+    // One merged set for the map and the list: the layers are one answer to
+    // "what is around me", the list re-sorts the union by distance, and the
+    // machine's own idea of visibility decides it — including the rule that a
+    // place found by both layers appears once, as the park it is tagged as.
+    const spots = visibleSpotsOf(state);
+    const selectedId = state.selectedId;
 
     // With no position there is no map worth drawing — a world view centred on
     // nothing would be decoration. With a position but no results there is:
@@ -222,6 +319,11 @@ export function composeApp(root: HTMLElement, deps: AppDeps = {}): AppHandle {
     root.dataset.hasPosition = String(position !== null);
     root.dataset.hasResults = String(spots.length > 0);
     if (!position) return;
+
+    renderLayerToggle(layersElement, state.bathing, {
+      onToggle: () => dispatch({ kind: "bathing-toggled" }),
+      onRetry: () => dispatch({ kind: "bathing-retry-requested" }),
+    });
 
     map.render(spots, position, selectedId);
     renderSpotList(listElement, spots, position, selectedId, {
@@ -280,6 +382,7 @@ interface Shell {
   mapElement: HTMLElement;
   drawer: SpotDrawer;
   statusElement: HTMLElement;
+  layersElement: HTMLElement;
   listElement: HTMLElement;
   pickerElement: HTMLElement;
   creditElement: HTMLElement;
@@ -311,10 +414,17 @@ function buildShell(root: HTMLElement): Shell {
   const statusElement = document.createElement("div");
   statusElement.className = "app-status";
 
+  // Between the status and the list: the layer chips change what the list
+  // holds, so they sit where that relationship reads top-to-bottom. Hidden by
+  // the stylesheet until a position exists — a layer toggle with nowhere to
+  // search from is a dead control.
+  const layersElement = document.createElement("div");
+  layersElement.className = "app-layers";
+
   const listElement = document.createElement("div");
   listElement.className = "app-list";
 
-  drawer.element.append(statusElement, listElement);
+  drawer.element.append(statusElement, layersElement, listElement);
 
   const creditElement = createAttribution();
 
@@ -328,6 +438,7 @@ function buildShell(root: HTMLElement): Shell {
     mapElement,
     drawer,
     statusElement,
+    layersElement,
     listElement,
     pickerElement,
     creditElement,
@@ -342,26 +453,6 @@ function currentPosition(phase: Phase): LatLon | null {
       return null;
     default:
       return phase.position;
-  }
-}
-
-/**
- * What belongs on screen now.
- *
- * `searching` and `failed` keep showing the last good answer — a refresh in
- * flight, or one that failed, is no reason to blank results the user is
- * reading (docs/spec.md §7.6). `empty` shows nothing, because there genuinely
- * is nothing here and the previous town's parks are not an answer.
- */
-function visibleSpots(phase: Phase): DogSpot[] {
-  switch (phase.kind) {
-    case "ready":
-      return phase.spots;
-    case "searching":
-    case "failed":
-      return phase.staleSpots;
-    default:
-      return [];
   }
 }
 

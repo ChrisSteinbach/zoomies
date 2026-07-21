@@ -1,22 +1,80 @@
-// The result list: every dog park we found, nearest first (docs/spec.md §7.3).
+// The result list: every spot we found, nearest first (docs/spec.md §7.3).
 //
 // A view and nothing else. It is handed the spots, where the user is, and
 // which row is selected, and it renders them. It owns no state, runs no
 // transitions and fetches nothing; everything it has to say goes out through
 // the callbacks, so the composition root remains the only place that knows
 // what selecting a row or asking for directions actually *does*.
+//
+// Since phase 2 the list holds both layers, and the two are not equally well
+// known. A dog park is a dog park: `leisure=dog_park` says so, and the row can
+// simply name it. A bathing spot is a claim of several different strengths
+// (docs/spec.md §4.3) about a place whose legality changes with the season
+// (§4.5.3) — so every bathing row says which claim it is making and what the
+// season does to it, and does so in a way a hurried reader cannot mistake for
+// a verified dog beach.
 
-import type { DogSpot, LatLon, SpotTags } from "./types";
+import type {
+  DogSpot,
+  DogSpotKind,
+  LatLon,
+  Provenance,
+  SpotTags,
+} from "./types";
 import { haversineMeters } from "./geo";
-import { formatDistance } from "./format";
+import { formatDistance, formatMonthDay } from "./format";
+import { isBannedOn } from "./dog-conditional";
 
 /**
- * What we show when OSM has no name for a park.
+ * What we show when OSM has no name for a spot.
  *
- * Plenty of real dog parks are genuinely unnamed, so this is a label for a
- * known place rather than an apology for missing data (docs/spec.md §7.3).
+ * Plenty of real dog parks and bathing spots are genuinely unnamed, so this is
+ * a label for a known place rather than an apology for missing data
+ * (docs/spec.md §7.3). It names the kind because the list holds both: a row
+ * reading just "Unnamed" would be the one row on screen that does not say what
+ * it is.
  */
-const UNNAMED = "Unnamed dog park";
+const UNNAMED: Record<DogSpotKind, string> = {
+  dog_park: "Unnamed dog park",
+  bathing_spot: "Unnamed bathing spot",
+};
+
+/** The badge beside a bathing spot's name — the at-a-glance layer marker,
+ *  coloured to match its pin on the map. */
+const BATHING_BADGE = "Bathing";
+
+/**
+ * What the data actually claims about dogs at a bathing spot, in one line.
+ *
+ * Three lines for three different claims, because they *are* different: a
+ * place mapped specifically for dogs, a place that merely allows them, and a
+ * place that is in the results solely because the word "hundbad" appears in
+ * its name (docs/spec.md §4.3). Flattening them into one confident caption is
+ * exactly what {@link Provenance} exists to prevent — the name-match line has
+ * to read as the guess it is, or a false positive looks like a dog beach.
+ *
+ * Dog parks get no such line. `leisure=dog_park` *is* the designation, so a
+ * caption saying so under every park would be noise the eye soon learns to
+ * skip past — which is precisely the habit the bathing lines cannot afford.
+ */
+const PROVENANCE_LABELS: Record<Provenance, string> = {
+  designated: "Dog bathing area",
+  permitted: "Dogs allowed",
+  "name-match": "Unverified — matched by name",
+};
+
+/**
+ * The caption for a bathing spot OSM says nothing seasonal about.
+ *
+ * The spec's default for *every* bathing spot (docs/spec.md §4.5.3): where
+ * OSM does not say, the app does not assert. Silence about a beach is not
+ * permission to take a dog onto it.
+ */
+const VERIFY_SIGNAGE = "Verify signage on site";
+
+/** A `dog:conditional` this app could not read. Something about dogs here is
+ *  conditional and we cannot say what, which escalates to the same advice. */
+const UNPARSED_SEASONAL = "Seasonal rules apply — check signs on site";
 
 /** Separates the tag labels on a row. */
 const TAG_SEPARATOR = " · ";
@@ -64,8 +122,8 @@ export function sortByDistanceFrom(
  * would quietly disagree with what the same park is called in every other OSM
  * app, and with the label the user will read on the sign.
  */
-export function spotLabel({ name }: DogSpot): string {
-  return name !== undefined && name.trim() !== "" ? name : UNNAMED;
+export function spotLabel({ name, kind }: DogSpot): string {
+  return name !== undefined && name.trim() !== "" ? name : UNNAMED[kind];
 }
 
 /**
@@ -94,6 +152,61 @@ export function describeTags(tags: SpotTags): string[] {
   return labels;
 }
 
+/** What a bathing row says about the season, and how loudly. */
+interface SeasonalCaption {
+  text: string;
+  /**
+   * Whether the ban is in force *today*. The row itself is marked when it is,
+   * not just the words — a caption is easy to read past, and this is the one
+   * thing on the row that can cost the reader a fine.
+   */
+  bannedNow: boolean;
+}
+
+/**
+ * The one seasonal line every bathing row carries.
+ *
+ * Exactly one, always, and never absent. OSM records existence, not current
+ * legality (docs/spec.md §4.5.3): in Stockholm dogs are banned from public
+ * beaches roughly 1 June – 31 August, and a bathing spot that looks confident
+ * in July can send someone to a beach where their dog is illegal — a worse
+ * outcome than showing no result at all. So an absent `dog:conditional`
+ * produces the verify-signage default rather than silence.
+ *
+ * Ordered by how much the data lets us say. A ban in force today is the
+ * strongest thing we can state and the only one that changes what the reader
+ * should do in the next hour, so it leads with "now" and still names the
+ * window. A ban out of season names the window too, because someone reading
+ * this in May is planning a trip in July. An unparsed rule says only that
+ * there is something to check. None of the four asserts that dogs are welcome:
+ * this app has no state that means "verified fine, go ahead".
+ */
+function seasonalCaption(spot: DogSpot, today: Date): SeasonalCaption {
+  const { seasonal } = spot;
+  if (seasonal === undefined) return { text: VERIFY_SIGNAGE, bannedNow: false };
+  if (seasonal.kind === "unparsed") {
+    return { text: UNPARSED_SEASONAL, bannedNow: false };
+  }
+
+  // En dash, spaced, because this is a range between two dates rather than a
+  // hyphenated compound.
+  const window = `${formatMonthDay(seasonal.from)} – ${formatMonthDay(seasonal.to)}`;
+  return isBannedOn(seasonal, today)
+    ? { text: `Dogs banned now (${window})`, bannedNow: true }
+    : { text: `Dogs banned ${window}`, bannedNow: false };
+}
+
+export interface SpotListOptions {
+  /**
+   * The date the seasonal captions are decided against. Defaults to now.
+   *
+   * Injectable because "banned *now*" is a claim about the clock, and a test
+   * that read the real one would say something different in August than in
+   * January — the two answers a test must never choose between.
+   */
+  today?: Date;
+}
+
 /**
  * Render the list into `container`, replacing whatever is there.
  *
@@ -108,16 +221,20 @@ export function renderSpotList(
   position: LatLon,
   selectedId: string | null,
   callbacks: SpotListCallbacks,
+  { today = new Date() }: SpotListOptions = {},
 ): void {
   const focused = focusedControl(container);
 
   // Ordered, because the order is the information: nearest first.
   const list = document.createElement("ol");
   list.className = "spot-list";
-  list.setAttribute("aria-label", "Dog parks, nearest first");
+  // "Results", not "Dog parks": the list holds both layers now, and naming one
+  // of them would leave a screen-reader user hunting for a bathing spot in a
+  // list that told them it contained parks.
+  list.setAttribute("aria-label", "Results, nearest first");
 
   for (const ranked of sortByDistanceFrom(position, spots)) {
-    list.append(renderRow(ranked, selectedId, callbacks));
+    list.append(renderRow(ranked, selectedId, callbacks, today));
   }
 
   // One atomic swap rather than emptying and refilling: the container keeps
@@ -132,6 +249,7 @@ function renderRow(
   { spot, meters }: RankedSpot,
   selectedId: string | null,
   callbacks: SpotListCallbacks,
+  today: Date,
 ): HTMLLIElement {
   const item = document.createElement("li");
   item.className = "spot-list-item";
@@ -163,6 +281,22 @@ function renderRow(
 
   select.append(name, distance);
 
+  // Beside the name, so the layer a row belongs to is answered before the
+  // reader has parsed anything else on it — and coloured like the pin, so the
+  // map and the list agree without either explaining itself.
+  //
+  // *Inside* the name rather than next to it, so it flows with the words and
+  // wraps after them. As a column of its own it took its width off the name,
+  // and at 375px that broke "Smedsuddsbadets hundbad" across two lines
+  // mid-word — the same trade the directions button already lost (see the
+  // narrow-screen rules in src/styles.css): the name is the information.
+  if (spot.kind === "bathing_spot") {
+    const badge = document.createElement("span");
+    badge.className = "spot-list-kind";
+    badge.textContent = BATHING_BADGE;
+    name.append(" ", badge);
+  }
+
   const tags = describeTags(spot.tags);
   if (tags.length > 0) {
     const tagLine = document.createElement("span");
@@ -172,6 +306,28 @@ function renderRow(
     // of running them together.
     tagLine.textContent = tags.join(TAG_SEPARATOR);
     select.append(tagLine);
+  }
+
+  // Everything a bathing spot has to disclose goes inside the select button
+  // for the same reason the tags line does: it lands in the button's
+  // accessible name, so a screen-reader user hears the caveats as part of the
+  // row rather than as loose text they might tab straight past.
+  if (spot.kind === "bathing_spot") {
+    const provenance = document.createElement("span");
+    provenance.className = "spot-list-provenance";
+    provenance.textContent = PROVENANCE_LABELS[spot.provenance];
+
+    const caveat = document.createElement("span");
+    caveat.className = "spot-list-caveat";
+    const seasonal = seasonalCaption(spot, today);
+    caveat.textContent = seasonal.text;
+
+    // The whole row is marked, not just the caption: the stylesheet turns the
+    // warning up and everything around it down, so a ban in force is the one
+    // thing on the row the eye cannot miss.
+    if (seasonal.bannedNow) select.dataset.banned = "true";
+
+    select.append(provenance, caveat);
   }
 
   const directions = document.createElement("button");

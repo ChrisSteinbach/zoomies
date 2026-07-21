@@ -12,6 +12,7 @@ for the full specification.
 npm test              # Lint + tests (runs npm run lint, then vitest run)
 npm run test:watch    # Tests in watch mode
 npm run test:coverage # Tests with coverage report
+npm run test:e2e      # Browser smoke tests for app-shell stacking (Playwright)
 npm run lint          # Type-check + ESLint + Stylelint + Prettier check
 npm run lint:fix      # Auto-fix ESLint + Stylelint + Prettier issues
 npm run format        # Prettier check only
@@ -22,6 +23,9 @@ npm run preview       # Serve the production build locally
 ```
 
 Run a single test file: `npx vitest run src/app/geo.test.ts`
+
+`npm run test:e2e` needs the Playwright browser binary, which is not installed
+by `npm ci`: `npx playwright install chromium`.
 
 Requires **Node.js 18+** (ES2022 target; `.nvmrc` pins 22).
 
@@ -82,6 +86,10 @@ committing:
 2. Open the app and walk through the affected flows
 3. Check both desktop and mobile (375×667) widths — this is a phone-first app
 4. Check interaction states, not just static layout
+
+The app shell's stacking invariants are guarded by `npm run test:e2e`, which
+runs a real browser at both widths — a floor rather than a substitute, since a
+new flow still has to be walked through by hand.
 
 Geolocation needs a secure context: `localhost` is fine, but testing from a
 phone over the LAN needs HTTPS.

@@ -50,6 +50,48 @@ const VANADIS = park({
   tags: { lit: true, surface: "grass" },
 });
 
+/**
+ * The other layer. `name-match` is the default because it is the weakest claim
+ * the app makes and the one the copy has to get right — a spot that is only in
+ * the results because "hundbad" is in its name must never read as a verified
+ * dog beach (docs/spec.md §4.3).
+ */
+function bathing(overrides: Partial<DogSpot> & Pick<DogSpot, "id">): DogSpot {
+  return {
+    kind: "bathing_spot",
+    lat: 59.3193,
+    lon: 18.0715,
+    tags: {},
+    provenance: "name-match",
+    ...overrides,
+  };
+}
+
+const SMEDSUDDS = bathing({
+  id: "node/4001",
+  name: "Smedsuddsbadets hundbad",
+  lat: 59.3245,
+  lon: 18.0271,
+  provenance: "designated",
+});
+
+/**
+ * The Stockholm beach ban of docs/spec.md §4.5.3, as OSM's `dog:conditional`
+ * expresses it and {@link parseDogConditional} reads it back.
+ */
+const SUMMER_BAN = {
+  kind: "ban",
+  from: { month: 6, day: 1 },
+  to: { month: 8, day: 31 },
+} as const;
+
+/** Inside the ban window, and fixed: "banned now" is a claim about the clock,
+ *  and a test that read the real one would answer differently in January. */
+const IN_SEASON = new Date(2026, 6, 15);
+
+/** Outside it. The same spot, the same rule, a different sentence. */
+const OFF_SEASON = new Date(2026, 0, 15);
+
 function noopCallbacks(): SpotListCallbacks {
   return { onSelect: vi.fn(), onDirections: vi.fn() };
 }
@@ -136,6 +178,14 @@ describe("spotLabel", () => {
       "Unnamed dog park",
     );
   });
+
+  it("calls an unnamed bathing spot what it is, not a park", () => {
+    // The list holds both layers, so the fallback has to say which one this
+    // row came from — it is the only thing on an unnamed row that can.
+    expect(spotLabel(bathing({ id: "way/12345" }))).toBe(
+      "Unnamed bathing spot",
+    );
+  });
 });
 
 describe("describeTags", () => {
@@ -220,6 +270,18 @@ describe("renderSpotList", () => {
 
     expect(rowTexts(container)).toHaveLength(1);
     expect(container.textContent).not.toContain("Björns");
+  });
+
+  it("names itself for what it holds, which is both layers", () => {
+    const container = mount();
+
+    renderSpotList(container, [BJORNS], SLUSSEN, null, noopCallbacks());
+
+    // "Dog parks, nearest first" would send a screen-reader user hunting for
+    // a bathing spot in a list that told them it had none.
+    expect(container.querySelector("ol")?.getAttribute("aria-label")).toBe(
+      "Results, nearest first",
+    );
   });
 
   it("calls an unnamed park an unnamed park", () => {
@@ -361,6 +423,264 @@ describe("renderSpotList", () => {
 
     expect(document.activeElement).toBe(selectButton(rows(container)[0]));
     expect(document.activeElement?.textContent).toContain("Vanadislundens");
+  });
+});
+
+describe("a bathing row", () => {
+  /** The text of one caption on a row, or `undefined` when the row has none —
+   *  which for a bathing row is itself the failure worth reporting. */
+  function captionText(
+    row: HTMLElement,
+    className: string,
+  ): string | undefined {
+    return (
+      row.querySelector<HTMLElement>(`.${className}`)?.textContent ?? undefined
+    );
+  }
+
+  it("marks the layer it came from beside the name", () => {
+    const container = mount();
+
+    renderSpotList(container, [SMEDSUDDS], SLUSSEN, null, noopCallbacks(), {
+      today: OFF_SEASON,
+    });
+
+    expect(captionText(rows(container)[0], "spot-list-kind")).toBe("Bathing");
+  });
+
+  it("says a designated spot is a dog bathing area", () => {
+    const container = mount();
+
+    renderSpotList(container, [SMEDSUDDS], SLUSSEN, null, noopCallbacks(), {
+      today: OFF_SEASON,
+    });
+
+    expect(captionText(rows(container)[0], "spot-list-provenance")).toBe(
+      "Dog bathing area",
+    );
+  });
+
+  it("says dogs are merely allowed where that is all OSM claims", () => {
+    const container = mount();
+    const permitted = bathing({
+      id: "way/4002",
+      name: "Långholmens strandbad",
+      provenance: "permitted",
+    });
+
+    renderSpotList(container, [permitted], SLUSSEN, null, noopCallbacks(), {
+      today: OFF_SEASON,
+    });
+
+    expect(captionText(rows(container)[0], "spot-list-provenance")).toBe(
+      "Dogs allowed",
+    );
+  });
+
+  it("owns up to a spot that only matched on its name", () => {
+    const container = mount();
+    // The Sweden-specific fallback of docs/spec.md §4.3 finds real hundbad and
+    // also false positives. This line is the difference between the two.
+    const guess = bathing({ id: "node/4003", name: "Hundbadet" });
+
+    renderSpotList(container, [guess], SLUSSEN, null, noopCallbacks(), {
+      today: OFF_SEASON,
+    });
+
+    expect(captionText(rows(container)[0], "spot-list-provenance")).toBe(
+      "Unverified — matched by name",
+    );
+  });
+
+  it("tells a spot with no seasonal tag to check the signs", () => {
+    const container = mount();
+
+    renderSpotList(container, [SMEDSUDDS], SLUSSEN, null, noopCallbacks(), {
+      today: IN_SEASON,
+    });
+
+    // OSM said nothing, which is not "no restriction" (docs/spec.md §4.5.3).
+    expect(captionText(rows(container)[0], "spot-list-caveat")).toBe(
+      "Verify signage on site",
+    );
+  });
+
+  it("warns that a ban is in force when today falls inside it", () => {
+    const container = mount();
+    const banned = bathing({
+      id: "way/4004",
+      name: "Långholmens strandbad",
+      provenance: "permitted",
+      seasonal: SUMMER_BAN,
+    });
+
+    renderSpotList(container, [banned], SLUSSEN, null, noopCallbacks(), {
+      today: IN_SEASON,
+    });
+
+    expect(captionText(rows(container)[0], "spot-list-caveat")).toBe(
+      "Dogs banned now (1 Jun – 31 Aug)",
+    );
+  });
+
+  it("names the window without alarm when the ban is out of season", () => {
+    const container = mount();
+    const banned = bathing({
+      id: "way/4004",
+      name: "Långholmens strandbad",
+      provenance: "permitted",
+      seasonal: SUMMER_BAN,
+    });
+
+    renderSpotList(container, [banned], SLUSSEN, null, noopCallbacks(), {
+      today: OFF_SEASON,
+    });
+
+    // Still worth saying in January: someone reading this is planning a trip.
+    expect(captionText(rows(container)[0], "spot-list-caveat")).toBe(
+      "Dogs banned 1 Jun – 31 Aug",
+    );
+  });
+
+  it("escalates a seasonal rule it could not read, rather than dropping it", () => {
+    const container = mount();
+    const odd = bathing({
+      id: "node/4005",
+      name: "Tantobadet",
+      seasonal: { kind: "unparsed" },
+    });
+
+    renderSpotList(container, [odd], SLUSSEN, null, noopCallbacks(), {
+      today: IN_SEASON,
+    });
+
+    expect(captionText(rows(container)[0], "spot-list-caveat")).toBe(
+      "Seasonal rules apply — check signs on site",
+    );
+  });
+
+  it("carries exactly one seasonal caption, whatever the data says", () => {
+    const container = mount();
+    const banned = bathing({
+      id: "way/4004",
+      name: "Långholmens strandbad",
+      seasonal: SUMMER_BAN,
+    });
+
+    renderSpotList(
+      container,
+      [SMEDSUDDS, banned],
+      SLUSSEN,
+      null,
+      noopCallbacks(),
+      { today: IN_SEASON },
+    );
+
+    for (const row of rows(container)) {
+      expect(row.querySelectorAll(".spot-list-caveat")).toHaveLength(1);
+    }
+  });
+
+  it("marks the row itself while a ban is in force", () => {
+    const container = mount();
+    const banned = bathing({
+      id: "way/4004",
+      name: "Långholmens strandbad",
+      seasonal: SUMMER_BAN,
+    });
+
+    renderSpotList(container, [banned], SLUSSEN, null, noopCallbacks(), {
+      today: IN_SEASON,
+    });
+
+    // The stylesheet turns the warning up and everything around it down off
+    // this attribute — a caption alone is too easy to read past.
+    expect(selectButton(rows(container)[0]).dataset.banned).toBe("true");
+  });
+
+  it("leaves the row unmarked when the same ban is out of season", () => {
+    const container = mount();
+    const banned = bathing({
+      id: "way/4004",
+      name: "Långholmens strandbad",
+      seasonal: SUMMER_BAN,
+    });
+
+    renderSpotList(container, [banned], SLUSSEN, null, noopCallbacks(), {
+      today: OFF_SEASON,
+    });
+
+    expect(selectButton(rows(container)[0]).dataset.banned).toBeUndefined();
+  });
+
+  it("reads its warnings out as part of the row, not beside it", () => {
+    const container = mount();
+    const banned = bathing({
+      id: "way/4004",
+      name: "Långholmens strandbad",
+      provenance: "permitted",
+      seasonal: SUMMER_BAN,
+    });
+
+    renderSpotList(container, [banned], SLUSSEN, null, noopCallbacks(), {
+      today: IN_SEASON,
+    });
+
+    // Inside the select button, so they land in its accessible name: a screen
+    // reader hears the caveats with the row rather than as loose text that
+    // tabbing skips.
+    const select = selectButton(rows(container)[0]);
+    expect(select.textContent).toContain("Bathing");
+    expect(select.textContent).toContain("Dogs allowed");
+    expect(select.textContent).toContain("Dogs banned now (1 Jun – 31 Aug)");
+  });
+
+  it("decides against the real calendar when no date is given", () => {
+    const container = mount();
+    const always = bathing({
+      id: "way/4006",
+      name: "Året runt-badet",
+      // A ban covering every day of the year, so the answer is the same
+      // whenever this test runs — what is under test is that the default
+      // reaches the decision at all, not which side of it today falls.
+      seasonal: {
+        kind: "ban",
+        from: { month: 1, day: 1 },
+        to: { month: 12, day: 31 },
+      },
+    });
+
+    renderSpotList(container, [always], SLUSSEN, null, noopCallbacks());
+
+    expect(
+      rows(container)[0].querySelector(".spot-list-caveat")?.textContent,
+    ).toContain("Dogs banned now");
+  });
+});
+
+describe("a park row beside the bathing ones", () => {
+  it("gains no badge, no provenance line and no caveat", () => {
+    const container = mount();
+
+    renderSpotList(
+      container,
+      [BJORNS, SMEDSUDDS],
+      SLUSSEN,
+      null,
+      noopCallbacks(),
+      { today: IN_SEASON },
+    );
+
+    // `leisure=dog_park` *is* the designation, so a provenance chip on every
+    // park row would be noise — and the bathing captions only carry weight
+    // because they are not on every row.
+    const [parkRow] = rows(container).filter((row) =>
+      (row.textContent ?? "").includes("Björns"),
+    );
+    expect(parkRow.querySelector(".spot-list-kind")).toBeNull();
+    expect(parkRow.querySelector(".spot-list-provenance")).toBeNull();
+    expect(parkRow.querySelector(".spot-list-caveat")).toBeNull();
+    expect(selectButton(parkRow).dataset.banned).toBeUndefined();
   });
 });
 

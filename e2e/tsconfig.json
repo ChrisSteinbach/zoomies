@@ -1,0 +1,16 @@
+{
+  "// ": "The root config compiles src/ alone, and its `types` pull in vitest's globals — which these files must not see, since `test` and `expect` here come from Playwright. So the browser suite gets a config of its own, and `npm run test:e2e` runs it: Playwright's own loader strips types without checking them.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": ["**/*.ts", "../playwright.config.ts"]
+}

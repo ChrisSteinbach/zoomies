@@ -1,7 +1,8 @@
 // IndexedDB helpers — used by place-cache.ts
 //
 // Single object store with versioned key prefixes:
-//   dog-parks-v1-{lat},{lon},{radius}       one cached provider answer
+//   dog-parks-v1-{lat},{lon},{radius}       one cached dog-park answer
+//   bathing-v1-{lat},{lon},{radius}         one cached bathing-spot answer
 //
 // Schema migration strategy: bump the version in the key prefix (e.g.
 // v1 → v2) and update CURRENT_KEY_PREFIXES below. Old keys are cleaned
@@ -10,14 +11,14 @@
 // Deliberately domain-free: a keyed store, nothing about dogs. The prefixes
 // below are the one exception, and they are literals rather than an import
 // so that this module depends on nothing. Keep them in step with
-// CACHE_KEY_PREFIX in place-cache.ts — place-cache.test.ts checks that they
-// still agree.
+// PARKS_CACHE_KEY_PREFIX and BATHING_CACHE_KEY_PREFIX in place-cache.ts —
+// place-cache.test.ts checks that they still agree.
 
 export const IDB_NAME = "zoomies";
 export const IDB_STORE = "cache";
 
 /** Current key prefixes. Update when bumping a schema version. */
-export const CURRENT_KEY_PREFIXES = ["dog-parks-v1-"];
+export const CURRENT_KEY_PREFIXES = ["dog-parks-v1-", "bathing-v1-"];
 
 let dbPromise: Promise<IDBDatabase | null> | null = null;
 

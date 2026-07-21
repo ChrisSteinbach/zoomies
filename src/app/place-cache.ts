@@ -12,14 +12,20 @@ import type { DogSpot } from "./types";
  */
 
 /**
- * The key prefix, carrying the schema version of what is stored.
+ * The key prefixes, one per layer, each carrying the schema version of what
+ * is stored under it.
  *
- * Bump the version whenever {@link DogSpot} or {@link CacheEntry} changes
- * shape: entries written by an older version then stop matching, and
- * `idbCleanupOldKeys` sweeps them up. Keep it in step with
- * CURRENT_KEY_PREFIXES in idb.ts.
+ * Separate prefixes because the two layers answer different questions about
+ * the same cell: "no dog parks within 3 km of here" must never be served as
+ * the answer to "where can my dog swim", nor the reverse.
+ *
+ * Bump a version whenever the {@link DogSpot}s stored under it or
+ * {@link CacheEntry} change shape: entries written by an older version then
+ * stop matching, and `idbCleanupOldKeys` sweeps them up. Keep both in step
+ * with CURRENT_KEY_PREFIXES in idb.ts.
  */
-export const CACHE_KEY_PREFIX = "dog-parks-v1-";
+export const PARKS_CACHE_KEY_PREFIX = "dog-parks-v1-";
+export const BATHING_CACHE_KEY_PREFIX = "bathing-v1-";
 
 /**
  * How coarsely a position is rounded before it becomes a cache key.
@@ -77,6 +83,9 @@ interface CacheEntry {
   spots: DogSpot[];
 }
 
+/** One lookup of one layer: the shape both provider methods share. */
+type Lookup = PlaceProvider["findDogParks"];
+
 /**
  * Wraps a provider so repeat lookups from the same place are free.
  *
@@ -92,21 +101,33 @@ export function withCache(
   const ttlMs = options.ttlMs ?? CACHE_TTL_MS;
   const now = options.now ?? (() => Date.now());
 
-  return {
-    async findDogParks(lat, lon, radiusM) {
-      const key = cacheKey(lat, lon, radiusM);
+  const remembered =
+    (prefix: string, lookup: Lookup): Lookup =>
+    async (lat, lon, radiusM) => {
+      const key = cacheKey(prefix, lat, lon, radiusM);
 
       const cached = await readEntry(store, key, ttlMs, now());
       if (cached) return cached.spots;
 
-      const spots = await provider.findDogParks(lat, lon, radiusM);
+      const spots = await lookup(lat, lon, radiusM);
       // Only successes are stored — a failure is a fact about the network at
       // one moment, not about the place. Zero results *are* stored: an empty
       // answer is legitimate (§3), and a sparsely mapped region is exactly
       // where re-asking the shared service buys nothing.
       await writeEntry(store, key, { storedAt: now(), spots });
       return spots;
-    },
+    };
+
+  return {
+    // Called through rather than passed by reference: an unbound method loses
+    // the provider it belongs to.
+    findDogParks: remembered(PARKS_CACHE_KEY_PREFIX, (lat, lon, radiusM) =>
+      provider.findDogParks(lat, lon, radiusM),
+    ),
+    findBathingSpots: remembered(
+      BATHING_CACHE_KEY_PREFIX,
+      (lat, lon, radiusM) => provider.findBathingSpots(lat, lon, radiusM),
+    ),
   };
 }
 
@@ -138,8 +159,13 @@ export function createIdbCacheStore(): CacheStore {
  * about the same centre at 3, 10 and 25 km, and answering a 25 km question
  * with a 3 km answer would silently hide most of the map.
  */
-function cacheKey(lat: number, lon: number, radiusM: number): string {
-  return `${CACHE_KEY_PREFIX}${cell(lat)},${cell(lon)},${Math.round(radiusM)}`;
+function cacheKey(
+  prefix: string,
+  lat: number,
+  lon: number,
+  radiusM: number,
+): string {
+  return `${prefix}${cell(lat)},${cell(lon)},${Math.round(radiusM)}`;
 }
 
 function cell(degrees: number): string {
@@ -218,7 +244,7 @@ function toCacheEntry(stored: unknown): CacheEntry | undefined {
  *
  * The check is deliberately about what the UI needs to render safely rather
  * than an exhaustive schema: when `DogSpot` grows a field, bump the version
- * in {@link CACHE_KEY_PREFIX} instead of teaching this function to guess.
+ * in that layer's key prefix instead of teaching this function to guess.
  */
 function isDogSpot(value: unknown): value is DogSpot {
   if (!isRecord(value)) return false;
@@ -230,11 +256,39 @@ function isDogSpot(value: unknown): value is DogSpot {
   if (typeof value.lon !== "number" || !Number.isFinite(value.lon))
     return false;
   if (!isRecord(value.tags)) return false;
+  if (!isSeasonalRule(value.seasonal)) return false;
   return (
     value.provenance === "designated" ||
     value.provenance === "permitted" ||
     value.provenance === "name-match"
   );
+}
+
+/**
+ * Whether a stored `seasonal` field is one the app can act on — absent very
+ * much included, which is the common case and the only one a dog park ever
+ * has.
+ *
+ * Checked rather than waved through because this field is a claim about
+ * legality, not a decoration: a ban window with a garbled endpoint would let
+ * the UI work out that today is fine at a beach where it is not
+ * (docs/spec.md §4.5.3). A half-read rule is worth exactly one more query.
+ */
+function isSeasonalRule(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!isRecord(value)) return false;
+  if (value.kind === "unparsed") return true;
+  if (value.kind !== "ban") return false;
+  return isMonthDay(value.from) && isMonthDay(value.to);
+}
+
+/** A `{ month, day }` inside the calendar, whatever else it may hold. */
+function isMonthDay(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const { month, day } = value;
+  if (typeof month !== "number" || !Number.isFinite(month)) return false;
+  if (typeof day !== "number" || !Number.isFinite(day)) return false;
+  return month >= 1 && month <= 12 && day >= 1 && day <= 31;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

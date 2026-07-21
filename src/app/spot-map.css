@@ -36,3 +36,10 @@
   outline: 3px solid #1a6b3c;
   outline-offset: 2px;
 }
+
+/* A bathing pin is blue where a park pin is green (the SVGs in spot-map.ts),
+   so its focus ring follows it. A green ring round a blue pin would read as
+   two different things overlapping rather than as one pin with focus. */
+.spot-map-pin-bathing:focus-visible {
+  outline-color: #0f5f7a;
+}

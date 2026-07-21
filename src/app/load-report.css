@@ -12,10 +12,12 @@
   left: 50%;
   transform: translateX(-50%);
 
-  /* The rest of the app's stack, top to bottom: the map picker (1200), the
-     OSM credit bar (1100), the results sheet (1000), the map itself (0/1).
-     This sits above all of it. */
-  z-index: 1300;
+  /* The rest of the app's stack, top to bottom: the map picker (--z-picker),
+     the OSM credit bar (--z-credit), the results sheet (--z-sheet), the map
+     itself (0/1). This sits above all of it — same var-with-fallback
+     pattern as the drawer: true on its own, and controlled from one place
+     by whatever shell defines the scale. */
+  z-index: var(--z-debug-overlay, 1300);
   max-width: min(22rem, 100vw - 1rem);
   padding: 0.5rem 0.625rem;
   border-radius: 0.5rem;

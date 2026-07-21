@@ -60,6 +60,17 @@ const VANADIS = park({
   lon: 18.0556013,
 });
 
+/** The other layer, which shares this map with the parks. */
+const SMEDSUDDS: DogSpot = {
+  id: "node/4001",
+  kind: "bathing_spot",
+  name: "Smedsuddsbadets hundbad",
+  lat: 59.3245,
+  lon: 18.0271,
+  tags: {},
+  provenance: "designated",
+};
+
 function mount(): HTMLElement {
   const container = document.createElement("div");
   document.body.append(container);
@@ -229,6 +240,54 @@ describe("createSpotMap", () => {
       "Björns Trädgårds hundrastgård",
       "Unnamed dog park",
     ]);
+
+    map.destroy();
+  });
+
+  it("draws a bathing spot as something other than a park", () => {
+    const container = mount();
+    const map = createSpotMap(container, { onSelect: vi.fn() });
+
+    map.render([BJORNS, SMEDSUDDS], SLUSSEN, null);
+
+    // The two layers are one merged answer, and the map is where they are
+    // hardest to tell apart: a pin has one glance to say which it is, and a
+    // bathing spot carries caveats a dog park does not.
+    const parkPin = pinNamed(container, "Björns Trädgårds hundrastgård");
+    const bathingPin = pinNamed(container, "Smedsuddsbadets hundbad");
+    expect(bathingPin.classList).toContain("spot-map-pin-bathing");
+    expect(parkPin.classList).not.toContain("spot-map-pin-bathing");
+    expect(bathingPin.src).not.toBe(parkPin.src);
+
+    map.destroy();
+  });
+
+  it("keeps a bathing pin its own colour once selected", () => {
+    const container = mount();
+    const map = createSpotMap(container, { onSelect: vi.fn() });
+
+    map.render([BJORNS, SMEDSUDDS], SLUSSEN, null);
+    const parkSrc = pinNamed(container, "Björns Trädgårds hundrastgård").src;
+    map.render([BJORNS, SMEDSUDDS], SLUSSEN, SMEDSUDDS.id);
+
+    // Selection is "more of the same colour", not "become a park".
+    const selected = pinNamed(container, "Smedsuddsbadets hundbad");
+    expect(selected.classList).toContain("spot-map-pin-selected");
+    expect(selected.classList).toContain("spot-map-pin-bathing");
+    expect(selected.src).not.toBe(parkSrc);
+
+    map.destroy();
+  });
+
+  it("selects a bathing pin the same way it selects a park", () => {
+    const container = mount();
+    const onSelect = vi.fn<(id: string | null) => void>();
+    const map = createSpotMap(container, { onSelect });
+
+    map.render([BJORNS, SMEDSUDDS], SLUSSEN, null);
+    tap(pinNamed(container, "Smedsuddsbadets hundbad"));
+
+    expect(onSelect).toHaveBeenCalledWith(SMEDSUDDS.id);
 
     map.destroy();
   });

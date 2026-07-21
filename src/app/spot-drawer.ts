@@ -72,7 +72,9 @@ export function createSpotDrawer(container: HTMLElement): SpotDrawer {
   const handle = document.createElement("button");
   handle.type = "button";
   handle.className = "spot-drawer-handle";
-  handle.setAttribute("aria-label", "Show or hide the list of dog parks");
+  // "Results", not "dog parks": the list this handle hides holds both layers
+  // (spot-list.ts), and the drawer itself has never known what is in it.
+  handle.setAttribute("aria-label", "Show or hide the list of results");
   handle.setAttribute("aria-expanded", "true");
   handle.append(createChevron());
 
