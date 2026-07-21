@@ -1,0 +1,315 @@
+import { createOverpassProvider } from "./overpass";
+import { withFairUse } from "./fair-use";
+import { withCache } from "./place-cache";
+import { createExpandingSearch } from "./expanding-search";
+import type { ExpandingSearch } from "./expanding-search";
+import { watchLocation } from "./location";
+import type { LocationCallbacks, StopFn } from "./location";
+import { initialState, transition } from "./state-machine";
+import type { AppState, Effect, Event, Phase } from "./state-machine";
+import { renderSpotList } from "./spot-list";
+import { renderStatus } from "./status-view";
+import { createSpotMap } from "./spot-map";
+import type { SpotMapHandle } from "./spot-map";
+import { createSpotDrawer } from "./spot-drawer";
+import type { SpotDrawer } from "./spot-drawer";
+import { createMapPicker } from "./map-picker";
+import type { MapPickerHandle } from "./map-picker";
+import { createAttribution } from "./attribution";
+import { directionsUrl } from "./format";
+import { PlaceProviderError } from "./place-provider";
+import type { DogSpot, LatLon } from "./types";
+
+/**
+ * The composition root: the one place that knows every concrete dependency.
+ *
+ * Everything below it is either pure (the state machine, the geometry) or a
+ * dumb view (data and callbacks in, DOM out). This module builds the provider
+ * stack, mounts the views, and turns the machine's {@link Effect}s into the
+ * side effects they describe. It holds no rules of its own — if a decision
+ * about *what the app does* ends up here, it belongs in state-machine.ts.
+ */
+
+/** Injection points, so the wiring can be tested without a network or a GPS. */
+export interface AppDeps {
+  search?: ExpandingSearch;
+  watch?: (callbacks: LocationCallbacks) => StopFn;
+  /** How to hand off to the maps app. Replaced in tests; `window.open` live. */
+  openUrl?: (url: string) => void;
+  /**
+   * How to raise the picker. Injectable because picking a spot is pixel
+   * arithmetic against a laid-out map, which jsdom cannot do — map-picker's own
+   * tests cover that, and the wiring tests care only what happens once a
+   * position comes back.
+   */
+  createPicker?: typeof createMapPicker;
+}
+
+export interface AppHandle {
+  destroy(): void;
+}
+
+/**
+ * The provider stack, outermost first.
+ *
+ * Expanding radius asks *how far*, the cache asks *whether at all*, fair use
+ * asks *how often*, and Overpass answers one question at a time. The order is
+ * load-bearing: the cache must sit inside the expansion so each radius is
+ * cached separately, and outside fair use so a cache hit never takes a slot.
+ */
+export function createSearch(): ExpandingSearch {
+  return createExpandingSearch(
+    withCache(withFairUse(createOverpassProvider())),
+  );
+}
+
+export function composeApp(root: HTMLElement, deps: AppDeps = {}): AppHandle {
+  const search = deps.search ?? createSearch();
+  const watch = deps.watch ?? ((callbacks) => watchLocation(callbacks));
+  const openUrl =
+    deps.openUrl ?? ((url) => window.open(url, "_blank", "noopener"));
+  const createPicker = deps.createPicker ?? createMapPicker;
+
+  const { mapElement, drawer, statusElement, listElement, pickerElement } =
+    buildShell(root);
+
+  let state: AppState = initialState;
+  let stopWatching: StopFn | null = null;
+  let picker: MapPickerHandle | null = null;
+  /**
+   * Which search is the current one. A slow answer that arrives after the user
+   * has walked on is not the answer to the question now being asked, and
+   * letting it land would quietly replace fresh results with stale ones.
+   */
+  let searchToken = 0;
+
+  const map: SpotMapHandle = createSpotMap(mapElement, {
+    onSelect: (id) => dispatch({ kind: "spot-selected", id }),
+  });
+
+  // ── The dispatch loop ────────────────────────────────────────────────
+  //
+  // Events are queued rather than handled inline, because an effect may
+  // dispatch as it runs. Without the queue that nests one transition inside
+  // another, and the inner one would be computed against a state the outer one
+  // is about to replace.
+  const pending: Event[] = [];
+  let draining = false;
+
+  function dispatch(event: Event): void {
+    pending.push(event);
+    if (draining) return;
+
+    draining = true;
+    try {
+      for (let next = pending.shift(); next; next = pending.shift()) {
+        const { next: after, effects } = transition(state, next);
+        state = after;
+        render();
+        for (const effect of effects) perform(effect);
+      }
+    } finally {
+      draining = false;
+    }
+  }
+
+  function perform(effect: Effect): void {
+    switch (effect.kind) {
+      case "watch-location":
+        stopWatching ??= watch({
+          onPosition: (position) =>
+            dispatch({ kind: "position-fixed", position }),
+          onError: ({ code }) =>
+            dispatch({ kind: "location-failed", reason: code }),
+        });
+        return;
+
+      case "stop-watching":
+        stopWatching?.();
+        stopWatching = null;
+        return;
+
+      case "search":
+        runSearch(effect.position);
+        return;
+
+      case "open-picker":
+        openPicker();
+        return;
+
+      case "close-picker":
+        picker?.destroy();
+        picker = null;
+        pickerElement.hidden = true;
+        return;
+
+      case "open-directions":
+        openUrl(directionsUrl(effect.spot, effect.origin));
+        return;
+    }
+  }
+
+  function runSearch({ lat, lon }: LatLon): void {
+    const token = ++searchToken;
+
+    search(lat, lon).then(
+      ({ spots, radiusM }) => {
+        if (token !== searchToken) return;
+        dispatch({
+          kind: "search-succeeded",
+          spots,
+          searchedRadiusM: radiusM,
+        });
+      },
+      (error: unknown) => {
+        if (token !== searchToken) return;
+        dispatch({ kind: "search-failed", error: asProviderError(error) });
+      },
+    );
+  }
+
+  function openPicker(): void {
+    picker?.destroy();
+    pickerElement.hidden = false;
+    picker = createPicker(pickerElement, {
+      center: currentPosition(state.phase) ?? undefined,
+      onPick: (position) => dispatch({ kind: "position-picked", position }),
+    });
+  }
+
+  // ── Rendering ────────────────────────────────────────────────────────
+
+  function render(): void {
+    const { phase } = state;
+
+    // The status view decides whether it is the screen or a note above the
+    // results, and the shell lays itself out around that answer.
+    root.dataset.presence = renderStatus(statusElement, phase, {
+      onRetry: () => dispatch({ kind: "retry-requested" }),
+      onPickPosition: () => dispatch({ kind: "pick-requested" }),
+      onRetryLocation: () => dispatch({ kind: "location-retry-requested" }),
+    });
+
+    const position = currentPosition(phase);
+    const spots = visibleSpots(phase);
+    const selectedId = phase.kind === "ready" ? phase.selectedId : null;
+
+    // With no position there is no map worth drawing — a world view centred on
+    // nothing would be decoration. With a position but no results there is:
+    // "you are here, and there is nothing around you" is the answer.
+    root.dataset.hasPosition = String(position !== null);
+    root.dataset.hasResults = String(spots.length > 0);
+    if (!position) return;
+
+    map.render(spots, position, selectedId);
+    renderSpotList(listElement, spots, position, selectedId, {
+      onSelect: (id) => dispatch({ kind: "spot-selected", id }),
+      onDirections: (id) => dispatch({ kind: "directions-requested", id }),
+    });
+  }
+
+  dispatch({ kind: "started" });
+
+  return {
+    destroy() {
+      stopWatching?.();
+      picker?.destroy();
+      map.destroy();
+      drawer.destroy();
+      root.replaceChildren();
+    },
+  };
+}
+
+interface Shell {
+  mapElement: HTMLElement;
+  drawer: SpotDrawer;
+  statusElement: HTMLElement;
+  listElement: HTMLElement;
+  pickerElement: HTMLElement;
+}
+
+/**
+ * The app's furniture: a map with a sheet over it, the status above the list
+ * inside that sheet, and the attribution outside both.
+ *
+ * The attribution sits in the shell rather than in any view because it is a
+ * licensing obligation that does not lapse in the states that show no map
+ * (docs/spec.md §4.1).
+ */
+function buildShell(root: HTMLElement): Shell {
+  root.replaceChildren();
+  root.classList.add("app");
+
+  const mapElement = document.createElement("div");
+  mapElement.className = "app-map";
+
+  const pickerElement = document.createElement("div");
+  pickerElement.className = "app-picker";
+  pickerElement.hidden = true;
+
+  root.append(mapElement, pickerElement);
+
+  const drawer = createSpotDrawer(root);
+
+  const statusElement = document.createElement("div");
+  statusElement.className = "app-status";
+
+  const listElement = document.createElement("div");
+  listElement.className = "app-list";
+
+  drawer.element.append(statusElement, listElement);
+  root.append(createAttribution());
+
+  return { mapElement, drawer, statusElement, listElement, pickerElement };
+}
+
+/** Where the user is, as far as the current phase knows. */
+function currentPosition(phase: Phase): LatLon | null {
+  switch (phase.kind) {
+    case "locating":
+    case "needs-position":
+      return null;
+    default:
+      return phase.position;
+  }
+}
+
+/**
+ * What belongs on screen now.
+ *
+ * `searching` and `failed` keep showing the last good answer — a refresh in
+ * flight, or one that failed, is no reason to blank results the user is
+ * reading (docs/spec.md §7.6). `empty` shows nothing, because there genuinely
+ * is nothing here and the previous town's parks are not an answer.
+ */
+function visibleSpots(phase: Phase): DogSpot[] {
+  switch (phase.kind) {
+    case "ready":
+      return phase.spots;
+    case "searching":
+    case "failed":
+      return phase.staleSpots;
+    default:
+      return [];
+  }
+}
+
+/**
+ * Anything thrown by the provider stack, as the typed failure the UI knows how
+ * to talk about.
+ *
+ * A non-`PlaceProviderError` reaching here is a bug in our own reading of the
+ * response rather than anything the service did, so it is reported as an
+ * unreadable answer — and, like a genuinely unreadable one, is not retryable:
+ * asking again would run the same broken code.
+ */
+function asProviderError(error: unknown): PlaceProviderError {
+  return error instanceof PlaceProviderError
+    ? error
+    : new PlaceProviderError(
+        "malformed-response",
+        "Could not read the answer from the map data service",
+        { cause: error },
+      );
+}

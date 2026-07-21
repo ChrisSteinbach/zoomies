@@ -217,6 +217,27 @@ describe("when the search fails", () => {
     });
   });
 
+  it("asks the device again when the user retries from the dead end", () => {
+    const { state, effects } = run([
+      { kind: "started" },
+      { kind: "location-failed", reason: "TIMEOUT" },
+      { kind: "location-retry-requested" },
+    ]);
+
+    expect(state.phase).toEqual({ kind: "locating" });
+    expect(effects).toEqual([{ kind: "watch-location" }]);
+  });
+
+  it("does not restart the watcher when it is already following the user", () => {
+    const { state, effects } = run([
+      ...showingResults,
+      { kind: "location-retry-requested" },
+    ]);
+
+    expect(state.phase.kind).toBe("ready");
+    expect(effects).toEqual([]);
+  });
+
   it("has nothing to retry while it does not know where the user is", () => {
     const { state, effects } = run([
       { kind: "started" },

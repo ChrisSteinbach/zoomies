@@ -1,0 +1,353 @@
+// @vitest-environment jsdom
+//
+// The wiring, end to end, with the network and the GPS replaced and everything
+// else real: the actual state machine, the actual views, the actual Leaflet.
+// The point is to catch the faults that only exist between correct parts — an
+// event nobody dispatches, a view nobody re-renders, a stale answer landing on
+// top of a fresh one.
+//
+// jsdom lays nothing out, so nothing here asserts on geometry.
+
+import { composeApp } from "./compose-app";
+import type { AppDeps } from "./compose-app";
+import type { ExpandingSearchResult } from "./expanding-search";
+import type { LocationCallbacks, StopFn } from "./location";
+import { PlaceProviderError } from "./place-provider";
+import type { DogSpot, LatLon } from "./types";
+
+const TANTOLUNDEN: LatLon = { lat: 59.3123, lon: 18.0421 };
+/** ~1.1 km north — far enough to make the app query again. */
+const FAR_ENOUGH: LatLon = { lat: 59.3223, lon: 18.0421 };
+
+function spot(id: string, name: string, lat: number): DogSpot {
+  return {
+    id,
+    kind: "dog_park",
+    name,
+    lat,
+    lon: 18.0421,
+    tags: {},
+    provenance: "designated",
+  };
+}
+
+const TANTO = spot("way/1", "Tantolundens hundrastgård", 59.3133);
+const DRAKEN = spot("way/2", "Drakenbergsparkens hundrastgård", 59.3223);
+
+/** A geolocation we drive by hand. */
+function fakeGps() {
+  let callbacks: LocationCallbacks | undefined;
+  const stop = vi.fn();
+
+  const watch = (given: LocationCallbacks): StopFn => {
+    callbacks = given;
+    return stop;
+  };
+
+  return {
+    watch,
+    stop,
+    fix(position: LatLon) {
+      callbacks?.onPosition(position);
+    },
+    fail(code: "PERMISSION_DENIED" | "POSITION_UNAVAILABLE" | "TIMEOUT") {
+      callbacks?.onError({ code, message: code });
+    },
+  };
+}
+
+/** A search we resolve by hand, so ordering is ours to control. */
+function fakeSearch() {
+  const pending: {
+    resolve: (result: ExpandingSearchResult) => void;
+    reject: (error: unknown) => void;
+  }[] = [];
+
+  const search = () =>
+    new Promise<ExpandingSearchResult>((resolve, reject) => {
+      pending.push({ resolve, reject });
+    });
+
+  return {
+    search,
+    get calls() {
+      return pending.length;
+    },
+    async answer(spots: DogSpot[], radiusM = 3000, which = pending.length - 1) {
+      pending[which].resolve({ spots, radiusM });
+      await flush();
+    },
+    async fail(error: unknown, which = pending.length - 1) {
+      pending[which].reject(error);
+      await flush();
+    },
+  };
+}
+
+/** Let the dispatch that a settled promise triggers actually run. */
+function flush(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/**
+ * A picker we drive by hand.
+ *
+ * Picking a spot is pixel arithmetic against a laid-out map, which jsdom
+ * cannot do — map-picker.test.ts covers that path. What belongs here is only
+ * what the app does once a position comes back.
+ */
+function fakePicker() {
+  let onPick: ((position: LatLon) => void) | undefined;
+  const destroy = vi.fn();
+
+  return {
+    destroy,
+    create: (
+      _container: HTMLElement,
+      options: { onPick: (p: LatLon) => void },
+    ) => {
+      onPick = options.onPick;
+      return { destroy };
+    },
+    pick(position: LatLon) {
+      onPick?.(position);
+    },
+    get isOpen() {
+      return onPick !== undefined;
+    },
+  };
+}
+
+function mount(deps: Partial<AppDeps> = {}) {
+  const gps = fakeGps();
+  const search = fakeSearch();
+  const picker = fakePicker();
+  const openUrl = vi.fn();
+  const root = document.createElement("div");
+  document.body.append(root);
+
+  const app = composeApp(root, {
+    watch: gps.watch,
+    search: search.search,
+    createPicker: picker.create,
+    openUrl,
+    ...deps,
+  });
+
+  return { app, root, gps, search, picker, openUrl };
+}
+
+function parkNames(root: HTMLElement): string[] {
+  return [...root.querySelectorAll(".spot-list-item")].map((row) =>
+    row.querySelector(".spot-list-name")!.textContent.trim(),
+  );
+}
+
+function statusText(root: HTMLElement): string {
+  return root.querySelector(".app-status")?.textContent?.trim() ?? "";
+}
+
+afterEach(() => {
+  document.body.replaceChildren();
+});
+
+describe("opening the app", () => {
+  it("starts looking for the user straight away", () => {
+    const { root, search } = mount();
+
+    expect(statusText(root)).toMatch(/location/i);
+    expect(search.calls).toBe(0);
+  });
+
+  it("searches from the first fix and lists what it finds", async () => {
+    const { root, gps, search } = mount();
+
+    gps.fix(TANTOLUNDEN);
+    await search.answer([DRAKEN, TANTO]);
+
+    expect(parkNames(root)).toEqual([
+      "Tantolundens hundrastgård",
+      "Drakenbergsparkens hundrastgård",
+    ]);
+  });
+
+  it("credits OpenStreetMap before it has found anything at all", () => {
+    const { root } = mount();
+
+    expect(root.textContent).toContain("OpenStreetMap");
+  });
+});
+
+describe("when the device will not say where the user is", () => {
+  it("offers the manual picker and stops asking", () => {
+    const { root, gps } = mount();
+
+    gps.fail("PERMISSION_DENIED");
+
+    expect(root.querySelector(".app-status button")?.textContent).toMatch(
+      /position/i,
+    );
+    expect(gps.stop).toHaveBeenCalled();
+  });
+
+  it("searches from a position the user picks instead", async () => {
+    const { root, gps, search, picker } = mount();
+
+    gps.fail("PERMISSION_DENIED");
+    root.querySelector<HTMLButtonElement>(".status-action-primary")!.click();
+    picker.pick(TANTOLUNDEN);
+    await search.answer([TANTO]);
+
+    expect(parkNames(root)).toEqual(["Tantolundens hundrastgård"]);
+  });
+
+  it("puts the picker away once a position has come back from it", async () => {
+    const { root, gps, search, picker } = mount();
+
+    gps.fail("PERMISSION_DENIED");
+    root.querySelector<HTMLButtonElement>(".status-action-primary")!.click();
+    picker.pick(TANTOLUNDEN);
+    await search.answer([TANTO]);
+
+    expect(picker.destroy).toHaveBeenCalled();
+    expect(root.querySelector<HTMLElement>(".app-picker")!.hidden).toBe(true);
+  });
+});
+
+describe("while the user walks", () => {
+  it("keeps the results and re-measures for a small step", async () => {
+    const { root, gps, search } = mount();
+
+    gps.fix(TANTOLUNDEN);
+    await search.answer([TANTO, DRAKEN]);
+    gps.fix({ lat: 59.3128, lon: 18.0421 });
+
+    expect(search.calls).toBe(1);
+    expect(parkNames(root)).toHaveLength(2);
+  });
+
+  it("queries again once they have gone somewhere", async () => {
+    const { gps, search } = mount();
+
+    gps.fix(TANTOLUNDEN);
+    await search.answer([TANTO]);
+    gps.fix(FAR_ENOUGH);
+
+    expect(search.calls).toBe(2);
+  });
+
+  it("ignores an answer to a question the user has already walked away from", async () => {
+    const { root, gps, search } = mount();
+
+    gps.fix(TANTOLUNDEN);
+    await search.answer([TANTO]);
+    gps.fix(FAR_ENOUGH);
+
+    // The second query is in flight; the first one answers late.
+    await search.answer([DRAKEN, TANTO], 3000, 0);
+
+    expect(parkNames(root)).toEqual(["Tantolundens hundrastgård"]);
+  });
+});
+
+describe("when the lookup fails", () => {
+  it("warns that the results are stale rather than blanking them", async () => {
+    const { root, gps, search } = mount();
+
+    gps.fix(TANTOLUNDEN);
+    await search.answer([TANTO, DRAKEN]);
+    gps.fix(FAR_ENOUGH);
+    await search.fail(new PlaceProviderError("timeout", "took too long"));
+
+    expect(statusText(root)).toMatch(/out of date/i);
+    expect(parkNames(root)).toHaveLength(2);
+  });
+
+  it("takes the screen over when the very first search is the one that failed", async () => {
+    const { root, gps, search } = mount();
+
+    gps.fix(TANTOLUNDEN);
+    await search.fail(new PlaceProviderError("timeout", "took too long"));
+
+    expect(root.dataset.presence).toBe("takeover");
+    expect(statusText(root)).toMatch(/too long/i);
+  });
+
+  it("searches again when the user asks it to", async () => {
+    const { root, gps, search } = mount();
+
+    gps.fix(TANTOLUNDEN);
+    await search.fail(new PlaceProviderError("timeout", "took too long"));
+    root.querySelector<HTMLButtonElement>(".status-action-primary")!.click();
+
+    expect(search.calls).toBe(2);
+  });
+
+  it("reports an unexpected throw as an answer it could not read", async () => {
+    const { root, gps, search } = mount();
+
+    gps.fix(TANTOLUNDEN);
+    await search.fail(new TypeError("spots.map is not a function"));
+
+    expect(statusText(root)).toMatch(/could not read|made no sense/i);
+  });
+});
+
+describe("finding nothing", () => {
+  it("says how far it looked, and does not call it an error", async () => {
+    const { root, gps, search } = mount();
+
+    gps.fix(TANTOLUNDEN);
+    await search.answer([], 25_000);
+
+    expect(statusText(root)).toContain("25 km");
+    expect(parkNames(root)).toEqual([]);
+  });
+
+  it("does not fall back to the parks it found in the last place", async () => {
+    const { root, gps, search } = mount();
+
+    gps.fix(TANTOLUNDEN);
+    await search.answer([TANTO, DRAKEN]);
+    gps.fix(FAR_ENOUGH);
+    await search.answer([], 25_000);
+
+    expect(parkNames(root)).toEqual([]);
+  });
+});
+
+describe("acting on a result", () => {
+  it("hands the park off to the maps app", async () => {
+    const { root, gps, search, openUrl } = mount();
+
+    gps.fix(TANTOLUNDEN);
+    await search.answer([TANTO]);
+    root.querySelector<HTMLButtonElement>(".spot-list-directions")!.click();
+
+    expect(openUrl).toHaveBeenCalledWith(
+      expect.stringContaining(`${TANTO.lat},${TANTO.lon}`),
+    );
+  });
+
+  it("leaves the origin to the maps app when the GPS knows where we are", async () => {
+    const { root, gps, search, openUrl } = mount();
+
+    gps.fix(TANTOLUNDEN);
+    await search.answer([TANTO]);
+    root.querySelector<HTMLButtonElement>(".spot-list-directions")!.click();
+
+    expect(openUrl).toHaveBeenCalledWith(expect.not.stringContaining("origin"));
+  });
+});
+
+describe("shutting down", () => {
+  it("stops following the user and leaves nothing behind", () => {
+    const { app, root, gps } = mount();
+
+    gps.fix(TANTOLUNDEN);
+    app.destroy();
+
+    expect(gps.stop).toHaveBeenCalled();
+    expect(root.children).toHaveLength(0);
+  });
+});

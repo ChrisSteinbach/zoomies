@@ -209,3 +209,88 @@ body {
   outline: 3px solid #1a6b3c;
   outline-offset: 2px;
 }
+
+/* ---------------------------------------------------------------------------
+ * OSM attribution (src/app/attribution.ts)
+ *
+ * Small and quiet is fine; invisible is a licence breach. ODbL asks for
+ * *visible* credit (docs/spec.md §4.1), so this block may not grow a
+ * `display: none`, a zero height, or a colour that fails contrast against the
+ * page — and it belongs in the chrome, outside whatever region the phases
+ * render into, so that `empty` and `failed` carry it too.
+ * ------------------------------------------------------------------------ */
+
+.attribution {
+  padding: 0.75rem 0;
+  color: #555;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+.attribution p {
+  margin: 0.25rem 0;
+}
+
+.attribution a {
+  color: #1a6b3c;
+}
+
+/* ---------------------------------------------------------------------------
+ * App shell (src/app/compose-app.ts)
+ *
+ * A full-screen map with the result sheet over it. The shell owns only
+ * position and stacking; each view brings its own appearance.
+ * ------------------------------------------------------------------------ */
+
+.app {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+}
+
+.app-map {
+  position: absolute;
+  inset: 0;
+}
+
+/* No position yet means no map worth drawing: a world view centred on nothing
+ * is decoration, and the status has something to say instead. */
+.app[data-has-position="false"] .app-map {
+  display: none;
+}
+
+/* The picker covers everything, including the sheet — while it is open,
+ * choosing a position is the only thing to do. */
+.app-picker {
+  position: absolute;
+  inset: 0;
+  z-index: 1000;
+  background: #fff;
+}
+
+/* Above the sheet's own content so it stays readable while the list scrolls
+ * under it. */
+.app-status {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.app-status:empty {
+  display: none;
+}
+
+/* The credit is pinned over the map and under the sheet, so it is on screen in
+ * every phase — including the ones that draw no map at all. Position and
+ * backdrop only; its type is styled with the rest of the attribution above,
+ * and neither block may hide it. */
+.app > .attribution {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 0;
+  padding: 0.4rem 0.75rem 0.5rem;
+  text-align: center;
+  background: rgb(255 255 255 / 85%);
+}

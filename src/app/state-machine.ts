@@ -79,6 +79,8 @@ export type Event =
   | { kind: "search-succeeded"; spots: DogSpot[]; searchedRadiusM: number }
   | { kind: "search-failed"; error: PlaceProviderError }
   | { kind: "retry-requested" }
+  /** Ask the device where we are again, after it failed to say. */
+  | { kind: "location-retry-requested" }
   | { kind: "spot-selected"; id: string | null }
   | { kind: "directions-requested"; id: string };
 
@@ -175,6 +177,15 @@ export function transition(state: AppState, event: Event): TransitionResult {
 
     case "retry-requested":
       return retryRequested(state);
+
+    case "location-retry-requested":
+      // Only from the dead end. Anywhere else we either have a position or a
+      // watcher already running, and restarting it would be churn.
+      if (state.phase.kind !== "needs-position") return stay(state);
+      return {
+        next: { ...state, phase: { kind: "locating" } },
+        effects: [{ kind: "watch-location" }],
+      };
 
     case "spot-selected":
       if (state.phase.kind !== "ready") return stay(state);
