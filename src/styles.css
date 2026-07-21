@@ -280,17 +280,25 @@ body {
   display: none;
 }
 
-/* The credit is pinned over the map and under the sheet, so it is on screen in
- * every phase — including the ones that draw no map at all. Position and
- * backdrop only; its type is styled with the rest of the attribution above,
- * and neither block may hide it. */
+/* The credit is pinned to the bottom of the viewport above everything else,
+ * including the sheet (z-index 1000) and the picker. ODbL asks for visible
+ * credit, and "visible unless the drawer happens to be over it" is not that —
+ * an earlier version sat under the sheet and vanished in exactly the phases
+ * that draw no map, which is when the sheet is largest. The sheet reserves
+ * room for it below, so nothing is ever hidden behind it either. */
 .app > .attribution {
   position: absolute;
   right: 0;
   bottom: 0;
   left: 0;
-  z-index: 0;
-  padding: 0.4rem 0.75rem 0.5rem;
+  z-index: 1100;
+  padding: 0.35rem 0.75rem calc(0.4rem + env(safe-area-inset-bottom));
   text-align: center;
-  background: rgb(255 255 255 / 85%);
+  background: rgb(255 255 255 / 92%);
+}
+
+/* Room for the credit bar, so the last row of the list is never underneath
+ * it. Keep in step with the padding above. */
+.app .spot-drawer-content {
+  padding-bottom: calc(3.4rem + env(safe-area-inset-bottom));
 }
