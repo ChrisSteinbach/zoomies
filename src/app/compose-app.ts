@@ -1,6 +1,7 @@
 import { createOverpassProvider, OVERPASS_MIRROR_ENDPOINT } from "./overpass";
 import { withFairUse } from "./fair-use";
 import { withFallback } from "./fallback";
+import { createDatasetLoader, withOfflineDataset } from "./offline-dataset";
 import { withCache } from "./place-cache";
 import {
   BATHING_TARGET_RESULT_COUNT,
@@ -66,14 +67,18 @@ export interface Searches {
 /**
  * The provider stack, outermost first.
  *
- * Expanding radius asks *how far*, the cache asks *whether at all*, fair use
- * asks *how often*, fallback asks *whom*, and Overpass answers one question
- * at a time. The order is load-bearing: the cache must sit inside the
- * expansion so each radius is cached separately, and outside fair use so a
- * cache hit never takes a slot — which also means a cache hit never reaches
- * an endpoint at all, mirror included. Fallback sits inside fair use so the
- * mirror is tried before any backoff wait, not after: the other pool of
- * slots first, then wait.
+ * Expanding radius asks *how far*, the offline dataset asks *from where*,
+ * the cache asks *whether at all*, fair use asks *how often*, fallback asks
+ * *whom*, and Overpass answers one question at a time. The order is
+ * load-bearing: the dataset sits outside the whole live apparatus because an
+ * offline answer must cost nothing live — no cache entry written, no
+ * fair-use slot taken, no endpoint reached — while a query it cannot
+ * honestly cover falls through to that apparatus unchanged. The cache must
+ * sit inside the expansion so each radius is cached separately, and outside
+ * fair use so a cache hit never takes a slot — which also means a cache hit
+ * never reaches an endpoint at all, mirror included. Fallback sits inside
+ * fair use so the mirror is tried before any backoff wait, not after: the
+ * other pool of slots first, then wait.
  *
  * Both searches share one stack, built once. Only the outermost layer —
  * *how far* — differs between them, because the bathing layer is thin enough
@@ -83,13 +88,17 @@ export interface Searches {
  * promised at most two.
  */
 export function createSearches(): Searches {
-  const stack = withCache(
+  const live = withCache(
     withFairUse(
       withFallback(
         createOverpassProvider(),
         createOverpassProvider({ endpoint: OVERPASS_MIRROR_ENDPOINT }),
       ),
     ),
+  );
+  const stack = withOfflineDataset(
+    createDatasetLoader({ url: configuredDatasetUrl() }),
+    live,
   );
 
   return {
@@ -101,6 +110,21 @@ export function createSearches(): Searches {
       { targetCount: BATHING_TARGET_RESULT_COUNT },
     ),
   };
+}
+
+/**
+ * Where the dataset lives, when the build says otherwise.
+ *
+ * `VITE_DATASET_URL` exists for development and end-to-end verification: a
+ * locally built dataset can stand in for the published one without touching
+ * code. Env vars are untyped, so this reads like the boundary it is —
+ * anything but a non-empty string means "use the default".
+ */
+function configuredDatasetUrl(): string | undefined {
+  const configured: unknown = import.meta.env.VITE_DATASET_URL;
+  return typeof configured === "string" && configured !== ""
+    ? configured
+    : undefined;
 }
 
 /**
