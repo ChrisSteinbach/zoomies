@@ -1,7 +1,4 @@
-export interface LatLon {
-  lat: number;
-  lon: number;
-}
+import type { LatLon } from "./types";
 
 const EARTH_RADIUS_M = 6_371_000;
 
