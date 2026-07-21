@@ -52,6 +52,41 @@ export interface SpotTags {
 }
 
 /**
+ * A day of the year, with no year: seasonal rules recur annually, so there
+ * is nothing for a year to mean here.
+ *
+ * `month` is 1–12, `day` is 1–31. Whether a specific (month, day) pair is
+ * valid — day 30 of February — is the parser's job, not this type's.
+ */
+export interface MonthDay {
+  month: number;
+  day: number;
+}
+
+/**
+ * What OSM's `dog:conditional` tag says about when dogs are banned from a
+ * bathing spot.
+ *
+ * OSM records existence, not current legality (docs/spec.md §4.5.3): in
+ * Stockholm and many Swedish municipalities, dogs are banned from public
+ * beaches roughly 1 June – 31 August, with signed exceptions. Sending
+ * someone to a beach where their dog is illegal, because a pin looked
+ * confident, is a worse failure than showing no result at all — so this
+ * type has no state that means "definitely fine, go ahead". It only ever
+ * says "this window is banned" or "we don't know, go check".
+ */
+export type SeasonalRule =
+  /** A parsed annual no-dogs window, both endpoints inclusive. `from` can
+   *  sort after `to` — that means the window wraps the year end (e.g.
+   *  November to March), not that the range is empty. */
+  | { kind: "ban"; from: MonthDay; to: MonthDay }
+  /** The tag exists — something about dogs here is conditional — but this
+   *  parser's grammar didn't recognise it. Not the same as "no
+   *  restriction": the UI must escalate to "check signs on site" for this
+   *  case exactly as it would for a ban, never silently drop it. */
+  | { kind: "unparsed" };
+
+/**
  * One place a dog can go, as the app understands it.
  *
  * Deliberately *not* an Overpass element: this type is the seam that keeps
@@ -72,4 +107,11 @@ export interface DogSpot {
   lon: number;
   tags: SpotTags;
   provenance: Provenance;
+  /** Seasonal dog restrictions parsed from OSM's `dog:conditional` tag.
+   *  Only bathing spots carry this — dog parks aren't seasonally banned.
+   *  Absent means OSM said nothing, which is *not* "no restriction": the UI
+   *  shows a verify-signage caveat on every bathing spot regardless
+   *  (docs/spec.md §4.5.3), and this field only sharpens that caveat when
+   *  OSM happens to give a machine-readable answer. */
+  seasonal?: SeasonalRule;
 }
