@@ -122,6 +122,7 @@ function fakePicker() {
 function mount(deps: Partial<AppDeps> = {}) {
   const gps = fakeGps();
   const search = fakeSearch();
+  const bathingSearch = fakeSearch();
   const picker = fakePicker();
   const openUrl = vi.fn();
   const root = document.createElement("div");
@@ -130,12 +131,13 @@ function mount(deps: Partial<AppDeps> = {}) {
   const app = composeApp(root, {
     watch: gps.watch,
     search: search.search,
+    bathingSearch: bathingSearch.search,
     createPicker: picker.create,
     openUrl,
     ...deps,
   });
 
-  return { app, root, gps, search, picker, openUrl };
+  return { app, root, gps, search, bathingSearch, picker, openUrl };
 }
 
 function parkNames(root: HTMLElement): string[] {
@@ -346,6 +348,85 @@ describe("acting on a result", () => {
     root.querySelector<HTMLButtonElement>(".spot-list-directions")!.click();
 
     expect(openUrl).toHaveBeenCalledWith(expect.not.stringContaining("origin"));
+  });
+});
+
+const HUNDBADET: DogSpot = {
+  id: "way/9",
+  kind: "bathing_spot",
+  name: "Smedsuddsbadets hundbad",
+  lat: 59.3153,
+  lon: 18.0421,
+  tags: {},
+  provenance: "permitted",
+};
+
+function bathingChip(root: HTMLElement): HTMLButtonElement {
+  const chip = root.querySelector<HTMLButtonElement>(".layer-toggle-chip");
+  if (!chip) throw new Error("the layer chip should be in the drawer");
+  return chip;
+}
+
+describe("the bathing layer, wired", () => {
+  it("searches when toggled on and folds what it finds into the one list", async () => {
+    const { root, gps, search, bathingSearch } = mount();
+
+    gps.fix(TANTOLUNDEN);
+    await search.answer([TANTO]);
+    expect(bathingSearch.calls).toBe(0);
+
+    bathingChip(root).click();
+    expect(bathingSearch.calls).toBe(1);
+    await bathingSearch.answer([HUNDBADET], 10_000);
+
+    // One list with distance deciding the order across layers: the park at
+    // ~110 m, then the hundbad at ~330 m — not parks first, then bathing.
+    expect(parkNames(root)).toEqual([
+      "Tantolundens hundrastgård",
+      "Smedsuddsbadets hundbad",
+    ]);
+  });
+
+  it("takes the bathing rows back out when toggled off", async () => {
+    const { root, gps, search, bathingSearch } = mount();
+
+    gps.fix(TANTOLUNDEN);
+    await search.answer([TANTO]);
+    bathingChip(root).click();
+    await bathingSearch.answer([HUNDBADET], 10_000);
+
+    bathingChip(root).click();
+
+    expect(parkNames(root)).toEqual(["Tantolundens hundrastgård"]);
+  });
+
+  it("offers a retry when the layer fails, which asks again", async () => {
+    const { root, gps, search, bathingSearch } = mount();
+
+    gps.fix(TANTOLUNDEN);
+    await search.answer([TANTO]);
+    bathingChip(root).click();
+    await bathingSearch.fail(new PlaceProviderError("busy", "no free slot"));
+
+    expect(root.textContent).toContain("Couldn’t load bathing spots.");
+
+    root.querySelector<HTMLButtonElement>(".layer-toggle-retry")!.click();
+    expect(bathingSearch.calls).toBe(2);
+  });
+
+  it("hands a hundbad to the maps app even when no parks were found", async () => {
+    const { root, gps, search, bathingSearch, openUrl } = mount();
+
+    gps.fix(TANTOLUNDEN);
+    await search.answer([], 25_000);
+    bathingChip(root).click();
+    await bathingSearch.answer([HUNDBADET], 10_000);
+
+    root.querySelector<HTMLButtonElement>(".spot-list-directions")!.click();
+
+    expect(openUrl).toHaveBeenCalledWith(
+      expect.stringContaining(`${HUNDBADET.lat},${HUNDBADET.lon}`),
+    );
   });
 });
 

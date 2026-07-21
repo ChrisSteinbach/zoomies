@@ -138,8 +138,8 @@ describe("answering the search", () => {
       kind: "ready",
       spots: [TANTO, DRAKEN],
       searchedRadiusM: 3000,
-      selectedId: null,
     });
+    expect(state.selectedId).toBeNull();
   });
 
   it("says it found nothing rather than calling that an error", () => {
@@ -300,7 +300,7 @@ describe("acting on a result", () => {
       { kind: "spot-selected", id: "way/2" },
     ]);
 
-    expect(state.phase).toMatchObject({ selectedId: "way/2" });
+    expect(state.selectedId).toBe("way/2");
   });
 
   it("leaves the starting point to the maps app when the GPS knows it", () => {
@@ -335,6 +335,274 @@ describe("acting on a result", () => {
     expect(effects).toEqual([]);
   });
 });
+
+function bathingSpot(id: string, name?: string): DogSpot {
+  return {
+    id,
+    kind: "bathing_spot",
+    ...(name === undefined ? {} : { name }),
+    lat: 59.3208,
+    lon: 18.0284,
+    tags: {},
+    provenance: "permitted",
+  };
+}
+
+const HUNDBADET = bathingSpot("way/9", "Smedsuddsbadets hundbad");
+
+const bathingOn: Event[] = [...showingResults, { kind: "bathing-toggled" }];
+
+const bathingReady: Event[] = [
+  ...bathingOn,
+  {
+    kind: "bathing-search-succeeded",
+    spots: [HUNDBADET],
+    searchedRadiusM: 10_000,
+  },
+];
+
+describe("the bathing layer", () => {
+  it("starts looking from where the user is when toggled on", () => {
+    const { state, effects } = run(bathingOn);
+
+    expect(state.bathing).toEqual({ kind: "loading", staleSpots: [] });
+    expect(effects).toEqual([
+      { kind: "search-bathing", position: TANTOLUNDEN },
+    ]);
+  });
+
+  it("stays off when there is nowhere to search from", () => {
+    const { state, effects } = run([
+      { kind: "started" },
+      { kind: "bathing-toggled" },
+    ]);
+
+    expect(state.bathing).toEqual({ kind: "off" });
+    expect(effects).toEqual([]);
+  });
+
+  it("shows what it found", () => {
+    const { state } = run(bathingReady);
+
+    expect(state.bathing).toEqual({
+      kind: "ready",
+      spots: [HUNDBADET],
+      searchedRadiusM: 10_000,
+    });
+  });
+
+  it("keeps an empty answer as an answer, with how far it looked", () => {
+    const { state } = run([
+      ...bathingOn,
+      { kind: "bathing-search-succeeded", spots: [], searchedRadiusM: 25_000 },
+    ]);
+
+    expect(state.bathing).toEqual({
+      kind: "ready",
+      spots: [],
+      searchedRadiusM: 25_000,
+    });
+  });
+
+  it("discards the layer when toggled off", () => {
+    const { state, effects } = run([
+      ...bathingReady,
+      { kind: "bathing-toggled" },
+    ]);
+
+    expect(state.bathing).toEqual({ kind: "off" });
+    expect(effects).toEqual([]);
+  });
+
+  it("ignores an answer that lands after the layer was toggled off", () => {
+    const { state } = run([
+      ...bathingOn,
+      { kind: "bathing-toggled" },
+      {
+        kind: "bathing-search-succeeded",
+        spots: [HUNDBADET],
+        searchedRadiusM: 10_000,
+      },
+    ]);
+
+    expect(state.bathing).toEqual({ kind: "off" });
+  });
+
+  it("keeps what was on screen when a refresh fails", () => {
+    const { state } = run([
+      ...bathingReady,
+      { kind: "position-fixed", position: A_WALK_AWAY },
+      { kind: "bathing-search-failed" },
+    ]);
+
+    expect(state.bathing).toEqual({
+      kind: "failed",
+      staleSpots: [HUNDBADET],
+    });
+  });
+
+  it("asks again when the user retries a failed layer", () => {
+    const { state, effects } = run([
+      ...bathingOn,
+      { kind: "bathing-search-failed" },
+      { kind: "bathing-retry-requested" },
+    ]);
+
+    expect(state.bathing).toEqual({ kind: "loading", staleSpots: [] });
+    expect(effects).toEqual([
+      { kind: "search-bathing", position: TANTOLUNDEN },
+    ]);
+  });
+
+  it("refuses a layer retry when nothing failed", () => {
+    const { state, effects } = run([
+      ...bathingReady,
+      { kind: "bathing-retry-requested" },
+    ]);
+
+    expect(state.bathing.kind).toBe("ready");
+    expect(effects).toEqual([]);
+  });
+
+  it("follows the user when they genuinely walk somewhere", () => {
+    const { state, effects } = run([
+      ...bathingReady,
+      { kind: "position-fixed", position: A_WALK_AWAY },
+    ]);
+
+    expect(state.bathing).toEqual({
+      kind: "loading",
+      staleSpots: [HUNDBADET],
+    });
+    expect(effects).toEqual([
+      { kind: "search", position: A_WALK_AWAY },
+      { kind: "search-bathing", position: A_WALK_AWAY },
+    ]);
+  });
+
+  it("sits still through ordinary GPS drift, like the parks do", () => {
+    const { state, effects } = run([
+      ...bathingReady,
+      { kind: "position-fixed", position: A_FEW_STEPS },
+    ]);
+
+    expect(state.bathing.kind).toBe("ready");
+    expect(effects).toEqual([]);
+  });
+
+  it("moves with a hand-picked position", () => {
+    const { state, effects } = run([
+      ...bathingReady,
+      { kind: "position-picked", position: A_WALK_AWAY },
+    ]);
+
+    expect(state.bathing).toEqual({
+      kind: "loading",
+      staleSpots: [HUNDBADET],
+    });
+    expect(effects).toContainEqual({
+      kind: "search-bathing",
+      position: A_WALK_AWAY,
+    });
+  });
+
+  it("refreshes alongside a retried park search", () => {
+    const { state, effects } = run([
+      ...bathingReady,
+      { kind: "position-fixed", position: A_WALK_AWAY },
+      { kind: "search-failed", error: busyError() },
+      { kind: "bathing-search-failed" },
+      { kind: "retry-requested" },
+    ]);
+
+    expect(state.bathing.kind).toBe("loading");
+    expect(effects).toEqual([
+      { kind: "search", position: A_WALK_AWAY },
+      { kind: "search-bathing", position: A_WALK_AWAY },
+    ]);
+  });
+});
+
+describe("selection across both layers", () => {
+  it("lets a bathing spot be selected while the park search sits empty", () => {
+    const { state } = run([
+      { kind: "position-fixed", position: TANTOLUNDEN },
+      { kind: "search-succeeded", spots: [], searchedRadiusM: 25_000 },
+      { kind: "bathing-toggled" },
+      {
+        kind: "bathing-search-succeeded",
+        spots: [HUNDBADET],
+        searchedRadiusM: 10_000,
+      },
+      { kind: "spot-selected", id: "way/9" },
+    ]);
+
+    expect(state.phase.kind).toBe("empty");
+    expect(state.selectedId).toBe("way/9");
+  });
+
+  it("gives directions to a bathing spot while the park search sits empty", () => {
+    const { effects } = run([
+      { kind: "position-fixed", position: TANTOLUNDEN },
+      { kind: "search-succeeded", spots: [], searchedRadiusM: 25_000 },
+      { kind: "bathing-toggled" },
+      {
+        kind: "bathing-search-succeeded",
+        spots: [HUNDBADET],
+        searchedRadiusM: 10_000,
+      },
+      { kind: "directions-requested", id: "way/9" },
+    ]);
+
+    expect(effects).toEqual([
+      { kind: "open-directions", spot: HUNDBADET, origin: null },
+    ]);
+  });
+
+  it("keeps the selection through a refresh that still holds the spot", () => {
+    const { state } = run([
+      ...showingResults,
+      { kind: "spot-selected", id: "way/1" },
+      { kind: "position-fixed", position: A_WALK_AWAY },
+      {
+        kind: "search-succeeded",
+        spots: [TANTO],
+        searchedRadiusM: 3000,
+      },
+    ]);
+
+    expect(state.selectedId).toBe("way/1");
+  });
+
+  it("clears the selection when its spot is no longer in the answer", () => {
+    const { state } = run([
+      ...showingResults,
+      { kind: "spot-selected", id: "way/1" },
+      { kind: "position-fixed", position: A_WALK_AWAY },
+      {
+        kind: "search-succeeded",
+        spots: [DRAKEN],
+        searchedRadiusM: 3000,
+      },
+    ]);
+
+    expect(state.selectedId).toBeNull();
+  });
+
+  it("clears the selection when its layer is toggled off", () => {
+    const { state } = run([
+      ...bathingReady,
+      { kind: "spot-selected", id: "way/9" },
+      { kind: "bathing-toggled" },
+    ]);
+
+    expect(state.selectedId).toBeNull();
+  });
+});
+
+function busyError(): PlaceProviderError {
+  return new PlaceProviderError("busy", "no free slot");
+}
 
 function phasePosition(phase: Phase): LatLon | null {
   return "position" in phase ? phase.position : null;

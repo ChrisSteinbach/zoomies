@@ -441,7 +441,6 @@ describe("renderStatus, once there are results", () => {
     position: SLUSSEN,
     spots: [BJORNS],
     searchedRadiusM: 3_000,
-    selectedId: null,
   };
 
   it("shows nothing, because the list owns that screen", () => {

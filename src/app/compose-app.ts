@@ -9,8 +9,9 @@ import {
 import type { ExpandingSearch } from "./expanding-search";
 import { watchLocation } from "./location";
 import type { LocationCallbacks, StopFn } from "./location";
-import { initialState, transition } from "./state-machine";
+import { bathingSpotsOf, initialState, transition } from "./state-machine";
 import type { AppState, Effect, Event, Phase } from "./state-machine";
+import { renderLayerToggle } from "./layer-toggle";
 import { renderSpotList } from "./spot-list";
 import { renderStatus } from "./status-view";
 import { createSpotMap } from "./spot-map";
@@ -38,6 +39,8 @@ import type { DogSpot, LatLon } from "./types";
 /** Injection points, so the wiring can be tested without a network or a GPS. */
 export interface AppDeps {
   search?: ExpandingSearch;
+  /** The bathing layer's own search — same shape, thinner target. */
+  bathingSearch?: ExpandingSearch;
   watch?: (callbacks: LocationCallbacks) => StopFn;
   /** How to hand off to the maps app. Replaced in tests; `window.open` live. */
   openUrl?: (url: string) => void;
@@ -100,8 +103,27 @@ export function createSearches(): Searches {
   };
 }
 
+/**
+ * The two searches the app runs with: injected where given, the real stack
+ * where not — built at most once, so an injected half never conjures a
+ * second live stack for the other half to sit on.
+ */
+function resolveSearches(deps: AppDeps): {
+  search: ExpandingSearch;
+  bathingSearch: ExpandingSearch;
+} {
+  if (deps.search && deps.bathingSearch) {
+    return { search: deps.search, bathingSearch: deps.bathingSearch };
+  }
+  const built = createSearches();
+  return {
+    search: deps.search ?? built.parks,
+    bathingSearch: deps.bathingSearch ?? built.bathing,
+  };
+}
+
 export function composeApp(root: HTMLElement, deps: AppDeps = {}): AppHandle {
-  const search = deps.search ?? createSearches().parks;
+  const { search, bathingSearch } = resolveSearches(deps);
   const watch = deps.watch ?? ((callbacks) => watchLocation(callbacks));
   const openUrl =
     deps.openUrl ?? ((url) => window.open(url, "_blank", "noopener"));
@@ -111,6 +133,7 @@ export function composeApp(root: HTMLElement, deps: AppDeps = {}): AppHandle {
     mapElement,
     drawer,
     statusElement,
+    layersElement,
     listElement,
     pickerElement,
     creditElement,
@@ -127,6 +150,9 @@ export function composeApp(root: HTMLElement, deps: AppDeps = {}): AppHandle {
    * letting it land would quietly replace fresh results with stale ones.
    */
   let searchToken = 0;
+  /** The bathing layer's own counter — the layers refresh independently, so
+   *  one layer's new question must not disown the other's pending answer. */
+  let bathingToken = 0;
 
   const map: SpotMapHandle = createSpotMap(mapElement, {
     onSelect: (id) => dispatch({ kind: "spot-selected", id }),
@@ -181,6 +207,10 @@ export function composeApp(root: HTMLElement, deps: AppDeps = {}): AppHandle {
         runSearch(effect.position);
         return;
 
+      case "search-bathing":
+        runBathingSearch(effect.position);
+        return;
+
       case "open-picker":
         openPicker();
         return;
@@ -226,6 +256,33 @@ export function composeApp(root: HTMLElement, deps: AppDeps = {}): AppHandle {
     );
   }
 
+  /**
+   * Like {@link runSearch}, without the load-timeline marks: those instrument
+   * the cold start, and this layer only ever runs at a user's request, after
+   * the app is up.
+   */
+  function runBathingSearch({ lat, lon }: LatLon): void {
+    const token = ++bathingToken;
+
+    bathingSearch(lat, lon).then(
+      ({ spots, radiusM }) => {
+        if (token !== bathingToken) return;
+        dispatch({
+          kind: "bathing-search-succeeded",
+          spots,
+          searchedRadiusM: radiusM,
+        });
+      },
+      () => {
+        // The layer's failure handling needs no diagnosis: its note offers a
+        // retry whatever went wrong, and the primary search is the surface
+        // that explains provider failures in detail.
+        if (token !== bathingToken) return;
+        dispatch({ kind: "bathing-search-failed" });
+      },
+    );
+  }
+
   function openPicker(): void {
     picker?.destroy();
     pickerElement.hidden = false;
@@ -249,8 +306,10 @@ export function composeApp(root: HTMLElement, deps: AppDeps = {}): AppHandle {
     });
 
     const position = currentPosition(phase);
-    const spots = visibleSpots(phase);
-    const selectedId = phase.kind === "ready" ? phase.selectedId : null;
+    // One merged set for the map and the list: the layers are one answer to
+    // "what is around me", and the list re-sorts the union by distance.
+    const spots = [...visibleSpots(phase), ...bathingSpotsOf(state.bathing)];
+    const selectedId = state.selectedId;
 
     // With no position there is no map worth drawing — a world view centred on
     // nothing would be decoration. With a position but no results there is:
@@ -258,6 +317,11 @@ export function composeApp(root: HTMLElement, deps: AppDeps = {}): AppHandle {
     root.dataset.hasPosition = String(position !== null);
     root.dataset.hasResults = String(spots.length > 0);
     if (!position) return;
+
+    renderLayerToggle(layersElement, state.bathing, {
+      onToggle: () => dispatch({ kind: "bathing-toggled" }),
+      onRetry: () => dispatch({ kind: "bathing-retry-requested" }),
+    });
 
     map.render(spots, position, selectedId);
     renderSpotList(listElement, spots, position, selectedId, {
@@ -316,6 +380,7 @@ interface Shell {
   mapElement: HTMLElement;
   drawer: SpotDrawer;
   statusElement: HTMLElement;
+  layersElement: HTMLElement;
   listElement: HTMLElement;
   pickerElement: HTMLElement;
   creditElement: HTMLElement;
@@ -347,10 +412,17 @@ function buildShell(root: HTMLElement): Shell {
   const statusElement = document.createElement("div");
   statusElement.className = "app-status";
 
+  // Between the status and the list: the layer chips change what the list
+  // holds, so they sit where that relationship reads top-to-bottom. Hidden by
+  // the stylesheet until a position exists — a layer toggle with nowhere to
+  // search from is a dead control.
+  const layersElement = document.createElement("div");
+  layersElement.className = "app-layers";
+
   const listElement = document.createElement("div");
   listElement.className = "app-list";
 
-  drawer.element.append(statusElement, listElement);
+  drawer.element.append(statusElement, layersElement, listElement);
 
   const creditElement = createAttribution();
 
@@ -364,6 +436,7 @@ function buildShell(root: HTMLElement): Shell {
     mapElement,
     drawer,
     statusElement,
+    layersElement,
     listElement,
     pickerElement,
     creditElement,
