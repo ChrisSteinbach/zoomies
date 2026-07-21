@@ -103,6 +103,32 @@ body {
   cursor: pointer;
 }
 
+.spot-list-directions-icon {
+  display: none;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+/* On a phone the words cost more width than the park's name was getting, and
+ * long Swedish compounds started breaking mid-word. Below this the button
+ * keeps its arrow and its accessible name and gives the width back to the
+ * name, which is the part you are actually reading. */
+@media (width <= 26.5rem) {
+  .spot-list-directions-label {
+    /* Removed from the layout, not just hidden: the accessible name comes
+       from the button's own aria-label, so nothing is lost by dropping it. */
+    display: none;
+  }
+
+  .spot-list-directions-icon {
+    display: block;
+  }
+
+  .spot-list-directions {
+    padding: 0;
+  }
+}
+
 .spot-list-select:focus-visible,
 .spot-list-directions:focus-visible {
   outline: 3px solid #1a6b3c;

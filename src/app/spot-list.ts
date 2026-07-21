@@ -179,7 +179,22 @@ function renderRow(
   directions.className = "spot-list-directions";
   directions.dataset.spotId = spot.id;
   directions.dataset.spotAction = "directions";
-  directions.textContent = "Open in maps";
+
+  // The words and the arrow are separate elements so a narrow screen can drop
+  // the words and keep the button. On a phone the label cost more width than
+  // the park's name was getting, which is backwards: the name is the
+  // information, and the button is the same on every row. The accessible name
+  // below is unaffected either way.
+  const directionsIcon = document.createElement("span");
+  directionsIcon.className = "spot-list-directions-icon";
+  directionsIcon.setAttribute("aria-hidden", "true");
+  directionsIcon.textContent = "➔";
+
+  const directionsLabel = document.createElement("span");
+  directionsLabel.className = "spot-list-directions-label";
+  directionsLabel.textContent = "Open in maps";
+
+  directions.append(directionsIcon, directionsLabel);
   // Every row's button says the same three words, so the park's name goes in
   // the accessible name; otherwise a screen reader listing the buttons on the
   // page reads "Open in maps" a dozen times with nothing to tell them apart.

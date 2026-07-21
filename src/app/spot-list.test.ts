@@ -363,3 +363,45 @@ describe("renderSpotList", () => {
     expect(document.activeElement?.textContent).toContain("Vanadislundens");
   });
 });
+
+describe("the directions button on a narrow screen", () => {
+  // The media query itself is not reachable under jsdom, which has no layout.
+  // What is worth pinning here is that dropping the words costs nothing: the
+  // accessible name lives on the button, not in the text a phone hides.
+  it("keeps the words and the arrow as separate elements", () => {
+    const container = mount();
+
+    renderSpotList(container, [BJORNS], SLUSSEN, null, noopCallbacks());
+
+    const button = directionsButton(rows(container)[0]);
+    expect(
+      button.querySelector(".spot-list-directions-label")?.textContent,
+    ).toBe("Open in maps");
+    expect(button.querySelector(".spot-list-directions-icon")).not.toBeNull();
+  });
+
+  it("names the park on the button itself, so hiding the words loses nothing", () => {
+    const container = mount();
+
+    renderSpotList(container, [BJORNS], SLUSSEN, null, noopCallbacks());
+
+    const button = directionsButton(rows(container)[0]);
+    button.querySelector(".spot-list-directions-label")!.remove();
+
+    expect(button.getAttribute("aria-label")).toBe(
+      "Open in maps: Björns Trädgårds hundrastgård",
+    );
+  });
+
+  it("hides the arrow from a screen reader, which already has the label", () => {
+    const container = mount();
+
+    renderSpotList(container, [BJORNS], SLUSSEN, null, noopCallbacks());
+
+    expect(
+      directionsButton(rows(container)[0])
+        .querySelector(".spot-list-directions-icon")
+        ?.getAttribute("aria-hidden"),
+    ).toBe("true");
+  });
+});
