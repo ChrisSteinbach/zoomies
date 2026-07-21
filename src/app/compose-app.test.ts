@@ -141,9 +141,16 @@ function mount(deps: Partial<AppDeps> = {}) {
 }
 
 function parkNames(root: HTMLElement): string[] {
-  return [...root.querySelectorAll(".spot-list-item")].map((row) =>
-    row.querySelector(".spot-list-name")!.textContent.trim(),
-  );
+  return [...root.querySelectorAll(".spot-list-item")].map((row) => {
+    const name = row
+      .querySelector(".spot-list-name")!
+      .cloneNode(true) as HTMLElement;
+    // A bathing row's "Bathing" badge sits inside the name so that it wraps
+    // with the words rather than taking a column off them (spot-list.ts). It
+    // is a marker on the row, not part of what the place is called.
+    name.querySelector(".spot-list-kind")?.remove();
+    return name.textContent.trim();
+  });
 }
 
 function statusText(root: HTMLElement): string {

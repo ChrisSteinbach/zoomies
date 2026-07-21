@@ -1,4 +1,4 @@
-import type { LatLon } from "./types";
+import type { LatLon, MonthDay } from "./types";
 
 /** Human-readable distance: metres below 1 km, km above. */
 export function formatDistance(meters: number): string {
@@ -7,6 +7,40 @@ export function formatDistance(meters: number): string {
   }
   const km = meters / 1000;
   return km >= 10 ? `${Math.round(km)} km` : `${km.toFixed(1)} km`;
+}
+
+/** January first, so `month - 1` indexes it. */
+const MONTH_NAMES = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+/**
+ * One end of a seasonal window, in words: `"1 Jun"`, `"31 Aug"`.
+ *
+ * No year, because a {@link MonthDay} has none — the rules these dates come
+ * from recur every summer (docs/spec.md §4.5.3), and printing a year would
+ * invite the reader to work out whether it had already gone by.
+ *
+ * Abbreviated rather than spelled out: these sit in a caption beside a name
+ * and a distance on a phone screen, and "1 June – 31 August" wraps the line
+ * that a dog ban is written on. Formatted here rather than through
+ * `Intl.DateTimeFormat` because there is no date to format — a month and a day
+ * with no year is not a moment, and manufacturing one to print it would make
+ * the answer depend on the device's calendar and locale.
+ */
+export function formatMonthDay({ month, day }: MonthDay): string {
+  return `${day} ${MONTH_NAMES[month - 1]}`;
 }
 
 /**

@@ -36,6 +36,28 @@ const OVERPASS_ENDPOINT = "https://overpass-api.de/api/interpreter";
 /** The way out of a refused permission (src/app/status-view.ts). */
 const PICK_POSITION = "Set my position on the map";
 
+/** The drawer's handle, by the name a screen reader would find it under. */
+const DRAWER_HANDLE = "Show or hide the list of results";
+
+/** The chip that switches the bathing layer on (src/app/layer-toggle.ts). */
+const BATHING_CHIP = "Bathing spots";
+
+/** A bathing spot mapped *for* dogs, with nothing said about the season. */
+const DESIGNATED_BATHING = "Smedsuddsbadets hundbad";
+
+/** A beach that allows dogs and carries the summer ban as `dog:conditional`. */
+const CONDITIONAL_BATHING = "Långholmens strandbad";
+
+/**
+ * A day inside the Stockholm beach-ban window (docs/spec.md §4.5.3), which the
+ * page's clock is fixed to before it loads.
+ *
+ * Without it "Dogs banned now" would be an assertion about the wall clock: the
+ * bathing tests would pass all summer and start failing on the first of
+ * September, in a suite whose whole point is to answer the same way every run.
+ */
+const IN_BAN_SEASON = new Date("2026-07-15T12:00:00");
+
 /**
  * The same Overpass response the provider's own tests are written against:
  * seven elements, five unique parks — one has no coordinates and one is a
@@ -53,6 +75,45 @@ const FIXTURE = JSON.parse(
  * The largest id in it is a ten-digit node.
  */
 const ID_STRIDE = 100_000_000_000;
+
+/**
+ * The bathing layer's answer, written out here rather than taken from a
+ * fixture: these two spots exist to produce two specific captions, and what
+ * makes them do it — one tagged for dogs with nothing said about the season,
+ * one whose `dog:conditional` bans dogs across the summer — has to be readable
+ * beside the test that asserts on those captions.
+ *
+ * Both sit a couple of kilometres west of {@link STOCKHOLM}, so they land in
+ * the same list as the fixture's parks and sort among them.
+ */
+const BATHING_BODY = JSON.stringify({
+  version: 0.6,
+  elements: [
+    {
+      type: "node",
+      id: 4001,
+      lat: 59.3245,
+      lon: 18.0271,
+      tags: {
+        leisure: "bathing_place",
+        dog: "designated",
+        name: DESIGNATED_BATHING,
+      },
+    },
+    {
+      type: "node",
+      id: 4002,
+      lat: 59.3213,
+      lon: 18.0296,
+      tags: {
+        natural: "beach",
+        dog: "yes",
+        name: CONDITIONAL_BATHING,
+        "dog:conditional": "no @ (Jun 1-Aug 31)",
+      },
+    },
+  ],
+});
 
 interface Point {
   x: number;
@@ -73,6 +134,11 @@ interface Point {
  * provider keeps them apart (identity is `type/id`). Five parks make a list
  * shorter than any viewport here, and an invariant about the *last* row needs
  * one long enough to scroll under the credit bar.
+ *
+ * Both layers post to the same endpoint, so which one is asking is read off
+ * the query itself. Routing on the question rather than on call order matters:
+ * the layers search independently and expand their radius independently, so
+ * neither the order nor the number of requests is fixed.
  */
 async function stubNetwork(
   context: BrowserContext,
@@ -95,7 +161,13 @@ async function stubNetwork(
       return route.continue();
     }
     if (`${url.origin}${url.pathname}` === OVERPASS_ENDPOINT) {
-      return route.fulfill({ contentType: "application/json", body });
+      // The bathing union carries the `hundbad` name regex and the dog-park
+      // query does not (src/app/overpass.ts).
+      const asked = route.request().postData() ?? "";
+      return route.fulfill({
+        contentType: "application/json",
+        body: asked.includes("hundbad") ? BATHING_BODY : body,
+      });
     }
     return route.abort();
   });
@@ -162,9 +234,7 @@ test.describe("with the device's position shared", () => {
     await stubNetwork(context);
     await page.goto("/");
 
-    const handle = page.getByRole("button", {
-      name: "Show or hide the list of dog parks",
-    });
+    const handle = page.getByRole("button", { name: DRAWER_HANDLE });
     const firstRow = page.locator(".spot-list-item").first();
     await expect(firstRow).toBeVisible();
 
@@ -240,6 +310,90 @@ test.describe("with the device's position shared", () => {
     expect(await stackAt(page, await centreOf(credit))).toContain(
       "footer.attribution",
     );
+  });
+});
+
+/**
+ * The bathing layer, end to end (docs/spec.md §4.3).
+ *
+ * Not a stacking test like the rest of this file, and here for a different
+ * reason: what a bathing row says is a safety claim, and the wording of it is
+ * decided by a date. jsdom can be handed a date; only a browser can be handed
+ * a *clock*, a real toggle and a rendered list at once, and be asked whether
+ * the sentence a user actually reads in July is the right one.
+ */
+test.describe("with the bathing layer", () => {
+  test.use({ permissions: ["geolocation"], geolocation: STOCKHOLM });
+
+  /** The row for a spot, found the way a reader finds it: by its name. */
+  function rowFor(page: Page, name: string): Locator {
+    return page.locator(".spot-list-item").filter({ hasText: name });
+  }
+
+  /** A loaded app with results on screen and the clock inside the ban window.
+   *  The clock is set before the first navigation, so nothing the page ever
+   *  runs sees the real date. */
+  async function openWithResults(
+    context: BrowserContext,
+    page: Page,
+  ): Promise<Locator> {
+    await stubNetwork(context);
+    await page.clock.setFixedTime(IN_BAN_SEASON);
+    await page.goto("/");
+
+    await expect(rowFor(page, NEAREST_PARK)).toBeVisible();
+    return page.getByRole("button", { name: BATHING_CHIP });
+  }
+
+  test("the bathing layer folds into the one list", async ({
+    context,
+    page,
+  }) => {
+    const chip = await openWithResults(context, page);
+
+    await chip.click();
+
+    // One list, distance-sorted, holding both layers — not a second list and
+    // not a filter that hides the parks.
+    await expect(rowFor(page, DESIGNATED_BATHING)).toBeVisible();
+    await expect(rowFor(page, CONDITIONAL_BATHING)).toBeVisible();
+    await expect(rowFor(page, NEAREST_PARK)).toBeVisible();
+    await expect(chip).toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("a bathing spot says what the data supports", async ({
+    context,
+    page,
+  }) => {
+    const chip = await openWithResults(context, page);
+
+    await chip.click();
+
+    // OSM said nothing about this one's season, and saying nothing is not
+    // permission (docs/spec.md §4.5.3).
+    await expect(rowFor(page, DESIGNATED_BATHING)).toContainText(
+      "Verify signage on site",
+    );
+    // This one carries the ban, and the page's clock is standing in the middle
+    // of it. The caption a user reads today has to say so today.
+    await expect(rowFor(page, CONDITIONAL_BATHING)).toContainText(
+      "Dogs banned now (1 Jun – 31 Aug)",
+    );
+  });
+
+  test("toggling off takes the layer out", async ({ context, page }) => {
+    const chip = await openWithResults(context, page);
+
+    await chip.click();
+    await expect(rowFor(page, DESIGNATED_BATHING)).toBeVisible();
+
+    await chip.click();
+
+    await expect(rowFor(page, DESIGNATED_BATHING)).toHaveCount(0);
+    await expect(rowFor(page, CONDITIONAL_BATHING)).toHaveCount(0);
+    // The parks were never the bathing layer's to remove.
+    await expect(rowFor(page, NEAREST_PARK)).toBeVisible();
+    await expect(chip).toHaveAttribute("aria-pressed", "false");
   });
 });
 

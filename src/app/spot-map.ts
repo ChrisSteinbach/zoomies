@@ -12,7 +12,7 @@
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "./spot-map.css";
-import type { DogSpot, LatLon } from "./types";
+import type { DogSpot, DogSpotKind, LatLon } from "./types";
 import { worldZoomBounds } from "./map-bounds";
 import { OSM_TILE_ATTRIBUTION } from "./attribution";
 import { spotLabel } from "./spot-list";
@@ -55,18 +55,51 @@ const SELECTED_Z_OFFSET = 1000;
 const PIN_PATH =
   "M12 0C5.37 0 0 5.37 0 12c0 9 12 22 12 22s12-13 12-22C24 5.37 18.63 0 12 0z";
 
-const SPOT_PIN_SVG =
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 34">' +
-  `<path d="${PIN_PATH}" fill="#1a6b3c"/>` +
-  '<circle cx="12" cy="12" r="4.5" fill="#fff"/></svg>';
+/**
+ * A pin per layer, told apart by colour: the app's green for a dog park, a
+ * deep water blue for a bathing spot.
+ *
+ * The two layers are one merged answer to "what is around me" (compose-app.ts)
+ * and the map is where they are hardest to keep apart — a list row can spell
+ * out which it is, a pin has one glance to do it in. That matters more here
+ * than it would for two flavours of the same thing: a bathing spot carries
+ * caveats a dog park does not (docs/spec.md §4.5.3), and the pin is what sends
+ * someone to open the row and read them.
+ *
+ * The blue is deliberately dark and green-leaning rather than the azure of the
+ * you-are-here dot below. Shape already separates those two — a teardrop
+ * planted on a point against a dot centred on one — and this keeps the colours
+ * from arguing with that.
+ */
+const PIN_COLOURS: Record<DogSpotKind, { pin: string; selected: string }> = {
+  dog_park: { pin: "#1a6b3c", selected: "#12522e" },
+  bathing_spot: { pin: "#0f5f7a", selected: "#0b4557" },
+};
+
+/** The extra class a bathing pin carries, so the stylesheet can treat it as
+ *  its own thing. A park pin keeps `spot-map-pin` alone. */
+const BATHING_PIN_CLASS = "spot-map-pin-bathing";
+
+function pinSvg(fill: string): string {
+  return (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 34">' +
+    `<path d="${PIN_PATH}" fill="${fill}"/>` +
+    '<circle cx="12" cy="12" r="4.5" fill="#fff"/></svg>'
+  );
+}
 
 /** The selected pin: bigger, darker, ringed and outlined in white. Selection
- *  reads as "more of the same green", exactly as it does in the list. */
-const SELECTED_PIN_SVG =
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 26 36">' +
-  `<path d="${PIN_PATH}" fill="#12522e" stroke="#fff" stroke-width="2"/>` +
-  '<circle cx="12" cy="12" r="6" fill="#fff"/>' +
-  '<circle cx="12" cy="12" r="2.75" fill="#12522e"/></svg>';
+ *  reads as "more of the same colour", exactly as it does in the list — and as
+ *  the same treatment whichever layer the spot came from, because selection
+ *  means one thing here. */
+function selectedPinSvg(fill: string): string {
+  return (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 26 36">' +
+    `<path d="${PIN_PATH}" fill="${fill}" stroke="#fff" stroke-width="2"/>` +
+    '<circle cx="12" cy="12" r="6" fill="#fff"/>' +
+    `<circle cx="12" cy="12" r="2.75" fill="${fill}"/></svg>`
+  );
+}
 
 /** The familiar blue dot, because every maps app on the phone already means
  *  "you are here" by it. */
@@ -90,16 +123,42 @@ function svgIcon(
   });
 }
 
-// The teardrops are anchored on their point, which is the spot; the dot is
-// anchored on its middle, which is the user.
-const spotIcon = svgIcon(SPOT_PIN_SVG, [24, 34], [12, 34], "spot-map-pin");
-const selectedSpotIcon = svgIcon(
-  SELECTED_PIN_SVG,
-  [30, 42],
-  [15, 42],
-  "spot-map-pin spot-map-pin-selected",
-);
+/** Both icons for one layer. Built once per kind at module load — four small
+ *  data URIs, reused by every marker rather than re-encoded per render. */
+function iconsFor(kind: DogSpotKind): { pin: L.Icon; selected: L.Icon } {
+  const colours = PIN_COLOURS[kind];
+  const kindClass = kind === "bathing_spot" ? ` ${BATHING_PIN_CLASS}` : "";
+
+  // The teardrops are anchored on their point, which is the spot.
+  return {
+    pin: svgIcon(
+      pinSvg(colours.pin),
+      [24, 34],
+      [12, 34],
+      `spot-map-pin${kindClass}`,
+    ),
+    selected: svgIcon(
+      selectedPinSvg(colours.selected),
+      [30, 42],
+      [15, 42],
+      `spot-map-pin spot-map-pin-selected${kindClass}`,
+    ),
+  };
+}
+
+const SPOT_ICONS: Record<DogSpotKind, { pin: L.Icon; selected: L.Icon }> = {
+  dog_park: iconsFor("dog_park"),
+  bathing_spot: iconsFor("bathing_spot"),
+};
+
+/** The dot is anchored on its middle, which is the user. */
 const userIcon = svgIcon(USER_DOT_SVG, [24, 24], [12, 12], "spot-map-you");
+
+/** The icon a spot of this kind is drawn with, selected or not. */
+function iconFor(kind: DogSpotKind, selected: boolean): L.Icon {
+  const icons = SPOT_ICONS[kind];
+  return selected ? icons.selected : icons.pin;
+}
 
 export interface SpotMapOptions {
   /**
@@ -125,10 +184,13 @@ export interface SpotMapHandle {
 }
 
 /** What we need to remember about a pin already on the map: the marker itself,
- *  and where it is — the position is what decides whether it can be reused as
- *  is. Structurally a {@link LatLon}, so {@link planMarkers} reads it directly. */
+ *  where it is — the position is what decides whether it can be reused as is —
+ *  and which layer it belongs to, because repainting it for a selection change
+ *  has only the id to go on. Structurally a {@link LatLon}, so
+ *  {@link planMarkers} reads it directly. */
 interface PlacedPin extends LatLon {
   marker: L.Marker;
+  kind: DogSpotKind;
 }
 
 /** The work one render has to do to the pins. Every field is an action; a
@@ -242,7 +304,7 @@ export function createSpotMap(
     const label = spotLabel(spot);
 
     const marker = L.marker([spot.lat, spot.lon], {
-      icon: selected ? selectedSpotIcon : spotIcon,
+      icon: iconFor(spot.kind, selected),
       // The pin's accessible name is the row's label, fallback and all, so the
       // map and the list call the same park the same thing.
       alt: label,
@@ -257,14 +319,19 @@ export function createSpotMap(
     });
 
     marker.addTo(map);
-    pins.set(spot.id, { marker, lat: spot.lat, lon: spot.lon });
+    pins.set(spot.id, {
+      marker,
+      lat: spot.lat,
+      lon: spot.lon,
+      kind: spot.kind,
+    });
   }
 
   function paint(id: string, selected: boolean): void {
     const pin = pins.get(id);
     if (!pin) return;
 
-    pin.marker.setIcon(selected ? selectedSpotIcon : spotIcon);
+    pin.marker.setIcon(iconFor(pin.kind, selected));
     pin.marker.setZIndexOffset(selected ? SELECTED_Z_OFFSET : 0);
   }
 

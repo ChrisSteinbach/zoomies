@@ -107,6 +107,71 @@ body {
   font-size: 0.875rem;
 }
 
+/* The layer marker, beside the name. Water blue against the app's green, and
+   the same blue as the bathing pin on the map (src/app/spot-map.css), so a row
+   and its pin identify themselves as one thing without either being labelled.
+   A tint rather than a solid fill: it has to sit next to a name on every
+   bathing row without shouting over the caveats below it, which are the part
+   that actually matters.
+
+   Inline, because it lives inside the name and trails the words rather than
+   taking a column off them — a Swedish hundbad is one long compound and the
+   width has to go to it. `nowrap` so the badge itself is never the thing that
+   breaks. */
+.spot-list-kind {
+  display: inline-block;
+  padding: 0.05rem 0.4rem;
+  border-radius: 0.75rem;
+  background: #e2eff4;
+  color: #0b4557;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* The two lines a bathing row carries and a park row does not: what the data
+ * claims about dogs, and what the season does to it (docs/spec.md §4.3,
+ * §4.5.3). Caption-sized and quiet by default — the loud one is the banned
+ * case below, and it can only be loud if its neighbours are not. */
+.spot-list-provenance,
+.spot-list-caveat {
+  flex-basis: 100%;
+  color: #555;
+  font-size: 0.8125rem;
+  line-height: 1.35;
+}
+
+/* A ban in force *today*. OSM records existence, not current legality: this is
+ * the row that can cost the reader a fine, so the whole row is marked rather
+ * than only the words. Warm, because the app's green is the colour of "this is
+ * fine" everywhere else here and a warning painted in it would be a lie in
+ * paint — the same warm pair the failed status card uses. */
+.spot-list-select[data-banned="true"] {
+  background: #fdf1dc;
+}
+
+/* Everything except the warning steps back — but by colour, not by `opacity`.
+ * Fading #555 to 0.8 over this background lands at 4.3:1, and a row someone is
+ * being *warned* about is the worst possible place to push text under AA. This
+ * warm grey de-emphasises just as well and stays at 5.3:1. */
+.spot-list-select[data-banned="true"] .spot-list-name,
+.spot-list-select[data-banned="true"] .spot-list-distance,
+.spot-list-select[data-banned="true"] .spot-list-tags,
+.spot-list-select[data-banned="true"] .spot-list-provenance {
+  color: #6b6259;
+}
+
+.spot-list-select[data-banned="true"] .spot-list-kind {
+  background: #f2e4cd;
+  color: #6b6259;
+}
+
+.spot-list-select[data-banned="true"] .spot-list-caveat {
+  color: #8a5000;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
 .spot-list-directions {
   flex: none;
   align-self: center;
@@ -256,6 +321,90 @@ body {
 }
 
 /* ---------------------------------------------------------------------------
+ * Layer toggle (src/app/layer-toggle.ts)
+ *
+ * A chip that changes what the list below it holds, and one quiet line of
+ * honesty under it when there is something to admit — looking, found nothing
+ * within how far, or failed with a retry (docs/spec.md §3).
+ *
+ * Phase 3 plans more layers (§4.4), so these rules describe "a chip" rather
+ * than "the bathing chip": the next one is another chip in the same row.
+ * ------------------------------------------------------------------------ */
+
+.layer-toggle-chip {
+  flex: none;
+
+  /* 44px, the same floor every other control in this app holds itself to —
+     this one is tapped one-handed outdoors like the rest of them. */
+  min-height: 2.75rem;
+  padding: 0 1rem;
+  border: 1px solid #1a6b3c;
+
+  /* Fully round, which is what makes it read as a filter rather than as
+     another action button beside "Try again". */
+  border-radius: 1.5rem;
+  background: none;
+  color: #1a6b3c;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* Pressed is on. The state lives on aria-pressed, so what is announced and
+   what is drawn cannot drift apart — the same bargain the result rows make. */
+.layer-toggle-chip[aria-pressed="true"] {
+  background: #1a6b3c;
+  color: #fff;
+}
+
+/* Still looking. A lighter fill rather than a pulse or a fade: nothing else in
+   this app animates, the note below already says "Looking for bathing spots…"
+   in a live region, and dropping the chip's opacity would take its white
+   label under AA. Calm, and legible while it waits. */
+.layer-toggle-chip[aria-busy="true"] {
+  border-color: #2b8551;
+  background: #2b8551;
+}
+
+.layer-toggle-chip:focus-visible {
+  outline: 3px solid #1a6b3c;
+  outline-offset: 2px;
+}
+
+/* Its own line under the chip, and never more than one: the note exists to
+   admit something, and an admission that needs two lines needs better words. */
+.layer-toggle-note {
+  flex-basis: 100%;
+  margin: 0;
+  color: #555;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+.layer-toggle-retry {
+  position: relative;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #1a6b3c;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* A word in a sentence cannot be 44px tall without prising the sentence
+   apart, so the thumb gets a target the eye does not see. */
+.layer-toggle-retry::after {
+  content: "";
+  position: absolute;
+  inset: -0.85rem -0.5rem;
+}
+
+.layer-toggle-retry:focus-visible {
+  outline: 3px solid #1a6b3c;
+  outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------------------
  * OSM attribution (src/app/attribution.ts)
  *
  * Small and quiet is fine; invisible is a licence breach. ODbL asks for
@@ -330,6 +479,35 @@ body {
 }
 
 .app-status:empty {
+  display: none;
+}
+
+/* The layer chips, between the status and the list they change the contents
+ * of. A row rather than a stack, because phase 3 adds more of them (docs/spec
+ * §4.4) and they should wrap, not queue. The note each chip may bring wraps
+ * onto its own line under them (`flex-basis: 100%`, layer-toggle above). */
+.app-layers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+}
+
+/* No position, no chips: a layer toggle with nowhere to search from is a dead
+ * control, and this is also the only state in which the composition root does
+ * not render one at all — so without this the row would show whatever it last
+ * said.
+ *
+ * Deliberately *not* also keyed on `[data-presence="takeover"]`. The two
+ * takeovers that have nothing behind them — locating, needs-position — are
+ * exactly the two phases with no position, so this rule already covers them.
+ * The three that remain (searching, empty, failed) all have a position, which
+ * makes the chip a live control there rather than furniture: `empty` is
+ * precisely where someone who found no dog parks might want to try the other
+ * layer, and hiding the chip while its results are still listed underneath
+ * would strand them with no way to switch the layer back off. */
+.app[data-has-position="false"] .app-layers {
   display: none;
 }
 
