@@ -1,0 +1,88 @@
+/*
+ * The load-timeline report (src/app/load-report.ts): an opt-in overlay for
+ * reading the cold-start timeline on a phone in the field, where there is no
+ * cable and no devtools to fall back on. It has to win every stacking fight
+ * in the app, because a measurement you cannot read because the sheet is
+ * drawn over it is no measurement at all.
+ */
+
+.load-report {
+  position: fixed;
+  top: calc(0.5rem + env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+
+  /* The rest of the app's stack, top to bottom: the map picker (1200), the
+     OSM credit bar (1100), the results sheet (1000), the map itself (0/1).
+     This sits above all of it. */
+  z-index: 1300;
+  max-width: min(22rem, 100vw - 1rem);
+  padding: 0.5rem 0.625rem;
+  border-radius: 0.5rem;
+  background: rgb(0 0 0 / 80%);
+  font-family:
+    ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", monospace;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+
+  /* Fixed on purpose, not `prefers-color-scheme`: this overlay sits over both
+     the map and the white results sheet, and has to read the same over
+     either one rather than following whichever theme the rest of the page is
+     in. */
+  color: #fff;
+  color-scheme: dark;
+}
+
+.load-report-rows {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.load-report-rows td {
+  padding: 0.125rem 0.5rem 0.125rem 0;
+}
+
+/* Nowrap on the named cells, not on `td`: the detail cell must be allowed to
+   wrap, and a bare `.load-report-detail` cannot out-rank a `td` selector
+   carrying the class above it. On a 375px screen the numbers already fill the
+   row, and an unwrappable detail overflowed the panel and cost
+   "27 spots, 3.0 km" its unit when measured live — a second line is nothing
+   on a debug overlay; a truncated number is. */
+.load-report-label,
+.load-report-at,
+.load-report-delta {
+  white-space: nowrap;
+}
+
+.load-report-at,
+.load-report-delta {
+  text-align: right;
+}
+
+.load-report-detail {
+  color: rgb(255 255 255 / 70%);
+}
+
+.load-report-copy {
+  /* Same tap-target floor as the rest of the app; see .spot-list-select in
+     src/styles.css. */
+  min-width: 44px;
+  min-height: 44px;
+  margin-top: 0.375rem;
+  border: 1px solid rgb(255 255 255 / 30%);
+  border-radius: 0.375rem;
+  background: rgb(255 255 255 / 10%);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.load-report-copy:hover {
+  background: rgb(255 255 255 / 20%);
+}
+
+.load-report-copy:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}

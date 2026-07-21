@@ -16,7 +16,8 @@ import type { SpotDrawer } from "./spot-drawer";
 import { createMapPicker } from "./map-picker";
 import type { MapPickerHandle } from "./map-picker";
 import { createAttribution } from "./attribution";
-import { directionsUrl } from "./format";
+import { markLoad } from "./load-timeline";
+import { directionsUrl, formatDistance } from "./format";
 import { PlaceProviderError } from "./place-provider";
 import type { DogSpot, LatLon } from "./types";
 
@@ -124,9 +125,12 @@ export function composeApp(root: HTMLElement, deps: AppDeps = {}): AppHandle {
   function perform(effect: Effect): void {
     switch (effect.kind) {
       case "watch-location":
+        markLoad("watch-started");
         stopWatching ??= watch({
-          onPosition: (position) =>
-            dispatch({ kind: "position-fixed", position }),
+          onPosition: (position, accuracyM) => {
+            markLoad("first-fix", accuracyDetail(accuracyM));
+            dispatch({ kind: "position-fixed", position });
+          },
           onError: ({ code }) =>
             dispatch({ kind: "location-failed", reason: code }),
         });
@@ -159,9 +163,17 @@ export function composeApp(root: HTMLElement, deps: AppDeps = {}): AppHandle {
 
   function runSearch({ lat, lon }: LatLon): void {
     const token = ++searchToken;
+    markLoad("search-started");
 
     search(lat, lon).then(
       ({ spots, radiusM }) => {
+        // Marked before the token check: the timeline records when the data
+        // came back, which is true whether or not this answer is still the
+        // one being waited for.
+        markLoad(
+          "search-settled",
+          `${spots.length} spots, ${formatDistance(radiusM)}`,
+        );
         if (token !== searchToken) return;
         dispatch({
           kind: "search-succeeded",
@@ -170,8 +182,10 @@ export function composeApp(root: HTMLElement, deps: AppDeps = {}): AppHandle {
         });
       },
       (error: unknown) => {
+        const failure = asProviderError(error);
+        markLoad("search-settled", failure.kind);
         if (token !== searchToken) return;
-        dispatch({ kind: "search-failed", error: asProviderError(error) });
+        dispatch({ kind: "search-failed", error: failure });
       },
     );
   }
@@ -214,6 +228,11 @@ export function composeApp(root: HTMLElement, deps: AppDeps = {}): AppHandle {
       onSelect: (id) => dispatch({ kind: "spot-selected", id }),
       onDirections: (id) => dispatch({ kind: "directions-requested", id }),
     });
+
+    // The rows are in the document; the browser paints them a frame later.
+    // Close enough for a timeline whose other steps are counted in seconds,
+    // and it avoids a callback that could outlive the app that scheduled it.
+    if (spots.length > 0) markLoad("first-row");
   }
 
   dispatch({ kind: "started" });
@@ -344,6 +363,18 @@ function visibleSpots(phase: Phase): DogSpot[] {
     default:
       return [];
   }
+}
+
+/**
+ * How far out a fix might be, in the words the load report shows.
+ *
+ * Worth recording because "the fix took eight seconds" and "the fix took eight
+ * seconds and was good to eight metres" call for different answers: the second
+ * says the device was holding out for satellites when a coarser fix would have
+ * been enough to sort a handful of dog parks.
+ */
+function accuracyDetail(accuracyM: number | null): string | undefined {
+  return accuracyM === null ? undefined : `±${Math.round(accuracyM)} m`;
 }
 
 /**

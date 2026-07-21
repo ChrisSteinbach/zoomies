@@ -17,9 +17,9 @@ function fakeGeo() {
       return 1;
     },
     clearWatch,
-    firePosition(lat: number, lon: number) {
+    firePosition(lat: number, lon: number, accuracy?: number) {
       onSuccess({
-        coords: { latitude: lat, longitude: lon },
+        coords: { latitude: lat, longitude: lon, accuracy },
       } as GeolocationPosition);
     },
     fireError(code: number, message = "") {
@@ -31,12 +31,30 @@ function fakeGeo() {
 describe("watchLocation", () => {
   it("reports a fix as a plain lat/lon", () => {
     const geo = fakeGeo();
-    const onPosition = vi.fn<(pos: LatLon) => void>();
+    const onPosition = vi.fn<(pos: LatLon, accuracyM: number | null) => void>();
     watchLocation({ onPosition, onError: vi.fn() }, geo);
 
     geo.firePosition(59.3293, 18.0686);
 
-    expect(onPosition).toHaveBeenCalledWith({ lat: 59.3293, lon: 18.0686 });
+    // This device's coords carry no accuracy figure at all — the honest
+    // reading is "does not say", not zero.
+    expect(onPosition).toHaveBeenCalledWith(
+      { lat: 59.3293, lon: 18.0686 },
+      null,
+    );
+  });
+
+  it("passes the device's own accuracy figure alongside a fix", () => {
+    const geo = fakeGeo();
+    const onPosition = vi.fn<(pos: LatLon, accuracyM: number | null) => void>();
+    watchLocation({ onPosition, onError: vi.fn() }, geo);
+
+    geo.firePosition(59.3293, 18.0686, 12.5);
+
+    expect(onPosition).toHaveBeenCalledWith(
+      { lat: 59.3293, lon: 18.0686 },
+      12.5,
+    );
   });
 
   it("reports a refused permission as PERMISSION_DENIED", () => {
