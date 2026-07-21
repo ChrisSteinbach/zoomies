@@ -1,0 +1,38 @@
+/*
+ * Enough styling for the results map to work on its own: Leaflet renders
+ * nothing at all unless its container has a height. Deliberately plain — the
+ * app stylesheet is free to override any of it. The container needs a height of
+ * its own (a viewport-height region, or a flex child); the canvas sizes itself
+ * against that.
+ */
+
+.spot-map {
+  position: relative;
+  display: flex;
+  min-height: 0;
+}
+
+.spot-map-canvas {
+  flex: 1;
+
+  /* A floor, so the map is still usable inside an auto-height container. */
+  min-height: 16rem;
+}
+
+/*
+ * The pins are drawn by the SVGs in spot-map.ts, not here — an icon has to be
+ * an image URL for Leaflet to size and anchor it. These rules only affect how
+ * the pins behave, and the "you are here" marker is the one that matters: it is
+ * not a result, so it must never look like something worth tapping.
+ */
+
+.spot-map-you {
+  pointer-events: none;
+}
+
+/* Leaflet makes its markers focusable, so a keyboard can reach the pins. The
+   ring matches the list's, because it is the same selection either way. */
+.spot-map-pin:focus-visible {
+  outline: 3px solid #1a6b3c;
+  outline-offset: 2px;
+}

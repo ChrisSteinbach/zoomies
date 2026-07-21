@@ -17,15 +17,47 @@ Data comes from [OpenStreetMap](https://www.openstreetmap.org/) —
 
 ## Status
 
-Planning. No code yet. The work is tracked in beads:
+**Phase 1 (MVP) is complete and validated against Stockholm.** From a
+position on Södermalm the app returns the nearest dog parks sorted by
+distance, on a map and in a list, with a deep link into the platform maps
+app. Geolocation denial, an unreachable Overpass, and genuinely-nothing-
+nearby each produce their own honest state.
+
+Spot-checked against OpenStreetMap: five results matched by name and by
+distance to the metre. See `bd show zoomies-bgc.19` for the full record.
+
+```bash
+npm install
+npm test          # lint + typecheck + unit tests
+npm run dev       # http://localhost:5173
+```
+
+Phases 2–4 (hundbad, supplementary amenities, the offline data path) are
+still open:
 
 ```bash
 bd ready          # what is actionable now
 bd show <id>      # detail on one item
 ```
 
-Start at `zoomies-bgc.1` (scaffold the toolchain) — everything else is
-blocked on it.
+## How it fits together
+
+```
+main.ts → compose-app.ts          the only place that knows concrete deps
+            ├── state-machine.ts  pure transition(state, event) → effects
+            ├── views             spot-list, spot-map, status-view, …
+            └── expanding-search( cache( fair-use( overpass ) ) )
+```
+
+The state machine is pure — no DOM, no fetch — so permission denial,
+timeouts and empty results are ordinary function calls rather than states
+you have to reproduce in a browser. The views take data and callbacks and
+return DOM; none of them owns application state.
+
+Data access is a decorator stack over one `PlaceProvider` that answers a
+single query. Expanding radius decides _how far_ to look, the cache decides
+_whether to ask at all_, and the fair-use guard decides _how often_ — each
+independently testable, and none of them inside the Overpass client.
 
 ## Decisions made at project start
 

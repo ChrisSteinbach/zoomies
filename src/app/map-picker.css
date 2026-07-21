@@ -1,0 +1,129 @@
+/*
+ * Enough styling for the picker to work on its own: the map has to have a
+ * height or Leaflet renders nothing, and the confirm button has to be reachable
+ * with a thumb. Deliberately plain — the app stylesheet is free to override any
+ * of it. The container needs a height of its own (a viewport-height overlay, or
+ * a flex child); everything below sizes itself against that.
+ */
+
+.map-picker {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.map-picker-map {
+  flex: 1;
+
+  /* A floor, so the picker is still usable inside an auto-height container. */
+  min-height: 16rem;
+}
+
+.map-picker-confirm {
+  position: absolute;
+  right: 1rem;
+  bottom: 1rem;
+  left: 1rem;
+
+  /* Leaflet's own controls stop at 1000. */
+  z-index: 1000;
+  min-height: 2.75rem;
+  padding: 0.75rem 1.25rem;
+  border: none;
+  border-radius: 0.5rem;
+  background: #1a6b3c;
+  color: #fff;
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.map-picker-confirm:disabled {
+  background: #6b6b6b;
+  cursor: default;
+}
+
+/* Place search: a bar above the map whose results overlay it. */
+
+.map-picker-search {
+  position: relative;
+
+  /* The wrapper is a stacking context, so this is what gets compared against
+     Leaflet's control panes — the results list inside it cannot win on its
+     own. */
+  z-index: 1100;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid #e0e0e0;
+  background: #fff;
+}
+
+.map-picker-search-form {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.map-picker-search-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 2.75rem;
+  padding: 0 0.75rem;
+  border: 1px solid #ccc;
+  border-radius: 0.5rem;
+
+  /* 16px is the threshold below which iOS Safari zooms the viewport on
+     focus. */
+  font-size: 16px;
+}
+
+.map-picker-search-submit {
+  flex: none;
+  min-height: 2.75rem;
+  padding: 0 1.125rem;
+  border: none;
+  border-radius: 0.5rem;
+  background: #1a6b3c;
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
+.map-picker-search-submit:disabled {
+  background: #6b6b6b;
+  cursor: default;
+}
+
+.map-picker-search-results {
+  position: absolute;
+  top: 100%;
+  right: 0.75rem;
+  left: 0.75rem;
+  max-height: 50vh;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  border: 1px solid #e0e0e0;
+  border-radius: 0 0 0.5rem 0.5rem;
+  background: #fff;
+  box-shadow: 0 0.375rem 1rem rgb(0 0 0 / 15%);
+  list-style: none;
+}
+
+.map-picker-search-result {
+  display: block;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.625rem 0.875rem;
+  border: none;
+  border-bottom: 1px solid #f0f0f0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.map-picker-search-message {
+  padding: 0.75rem 0.875rem;
+  color: #666;
+}

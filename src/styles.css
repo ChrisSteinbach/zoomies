@@ -1,0 +1,332 @@
+:root {
+  --bg: #f5f5f5;
+  --fg: #1a1a1a;
+
+  color-scheme: light dark;
+}
+
+body {
+  margin: 0;
+  padding: 1rem;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+
+/* ---------------------------------------------------------------------------
+ * Result list (src/app/spot-list.ts)
+ *
+ * Read one-handed, outdoors, on a phone: every control is at least 44px in
+ * both directions, focus is visible without hunting for it, and a long Swedish
+ * park name wraps rather than pushing the distance off the screen.
+ * ------------------------------------------------------------------------ */
+
+.spot-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.spot-list-item {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+/* The row itself is the button: the whole strip of it is tappable, which is
+   what makes it hittable with a thumb while holding a lead. */
+.spot-list-select {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  align-items: baseline;
+  min-width: 0;
+  min-height: 2.75rem;
+  padding: 0.75rem;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* The selected state lives on aria-pressed, so what is announced and what is
+   drawn cannot drift apart. The inset shadow is an accent bar that takes up no
+   layout, so selecting a row does not shift the list under the user's thumb. */
+.spot-list-select[aria-pressed="true"] {
+  background: #e8f3ec;
+  box-shadow: inset 0.25rem 0 0 #1a6b3c;
+}
+
+.spot-list-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 500;
+
+  /* "Björns Trädgårds hundrastgård" is not a short word. */
+  overflow-wrap: break-word;
+}
+
+.spot-list-distance {
+  flex: none;
+  color: #555;
+
+  /* Digits of equal width, so the distances line up as they tick over. */
+  font-variant-numeric: tabular-nums;
+}
+
+/* Second line of the row, and only present when OSM actually said something —
+   an absent tag renders as nothing at all, never as a "no". */
+.spot-list-tags {
+  flex-basis: 100%;
+  color: #555;
+  font-size: 0.875rem;
+}
+
+.spot-list-directions {
+  flex: none;
+  align-self: center;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  margin-right: 0.5rem;
+  padding: 0 0.875rem;
+  border: 1px solid #1a6b3c;
+  border-radius: 0.5rem;
+  background: none;
+  color: #1a6b3c;
+  font: inherit;
+  cursor: pointer;
+}
+
+.spot-list-select:focus-visible,
+.spot-list-directions:focus-visible {
+  outline: 3px solid #1a6b3c;
+  outline-offset: -3px;
+}
+
+/* ---------------------------------------------------------------------------
+ * Status states (src/app/status-view.ts)
+ *
+ * Everything shown when there is no list to show: locating, no position,
+ * searching, nothing found, failed. Two shapes — a takeover, which is the
+ * whole screen because there is nothing behind it, and a notice, which is a
+ * strip above results that are still worth reading (docs/spec.md §7.6).
+ *
+ * Same rules as the list: 44px targets, focus visible without hunting.
+ * ------------------------------------------------------------------------ */
+
+/* The live region stays in the DOM through `ready` so the next change is
+   announced — but with nothing to say it must take up no room. */
+.status-view:empty {
+  display: none;
+}
+
+.status-card {
+  padding: 1rem;
+  border-radius: 0.5rem;
+  background: #ececec;
+}
+
+/* Nothing behind it, so it can breathe and sit where the eye lands. */
+.status-card[data-status-tone="takeover"] {
+  max-width: 28rem;
+  margin: 1.5rem auto;
+  text-align: center;
+}
+
+/* Results underneath: stay small, stay out of the way, do not push them off
+   the screen. */
+.status-card[data-status-tone="notice"] {
+  margin: 0 0 0.75rem;
+  padding: 0.75rem;
+}
+
+/* A failure is the one state that earns a warning colour. `empty` deliberately
+   does not: finding nothing within 25 km is a legitimate answer, not a fault
+   (docs/spec.md §3), and colouring it like one would be a lie in paint. */
+.status-card[data-status="failed"] {
+  background: #fdf1dc;
+}
+
+/* The accent bar belongs to the notice form, where it reads as a margin note
+   pinned to the results below it. */
+.status-card[data-status="failed"][data-status-tone="notice"] {
+  box-shadow: inset 0.25rem 0 0 #8a5000;
+}
+
+.status-title {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 600;
+}
+
+.status-detail {
+  margin: 0.5rem 0 0;
+  color: #444;
+  font-size: 0.9375rem;
+}
+
+.status-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.status-card[data-status-tone="takeover"] .status-actions {
+  justify-content: center;
+}
+
+.status-action {
+  flex: none;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  padding: 0 1rem;
+  border: 1px solid #1a6b3c;
+  border-radius: 0.5rem;
+  font: inherit;
+  cursor: pointer;
+}
+
+.status-action-primary {
+  background: #1a6b3c;
+  color: #fff;
+}
+
+.status-action-secondary {
+  background: none;
+  color: #1a6b3c;
+}
+
+/* Outside the button rather than inside it: the primary is filled green, and
+   an inset ring would disappear into it. */
+.status-action:focus-visible {
+  outline: 3px solid #1a6b3c;
+  outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------------------
+ * OSM attribution (src/app/attribution.ts)
+ *
+ * Small and quiet is fine; invisible is a licence breach. ODbL asks for
+ * *visible* credit (docs/spec.md §4.1), so this block may not grow a
+ * `display: none`, a zero height, or a colour that fails contrast against the
+ * page — and it belongs in the chrome, outside whatever region the phases
+ * render into, so that `empty` and `failed` carry it too.
+ * ------------------------------------------------------------------------ */
+
+.attribution {
+  padding: 0.75rem 0;
+  color: #555;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+.attribution p {
+  margin: 0.25rem 0;
+}
+
+.attribution a {
+  color: #1a6b3c;
+}
+
+/* ---------------------------------------------------------------------------
+ * App shell (src/app/compose-app.ts)
+ *
+ * A full-screen map with the result sheet over it. The shell owns only
+ * position and stacking; each view brings its own appearance.
+ * ------------------------------------------------------------------------ */
+
+.app {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+}
+
+.app-map {
+  position: absolute;
+  inset: 0;
+}
+
+/* No position yet means no map worth drawing: a world view centred on nothing
+ * is decoration, and the status has something to say instead. */
+.app[data-has-position="false"] .app-map {
+  display: none;
+}
+
+/* The picker covers everything, including the sheet and the credit bar — while
+ * it is open, choosing a position is the only thing to do.
+ *
+ * The number matters. At the sheet's own z-index of 1000 the picker lost the
+ * tie on DOM order and opened *behind* it, so "Set my position on the map" —
+ * the only way out of a refused permission — looked like a dead button. That
+ * is the dead end it exists to prevent. Its own map carries the OSM tile
+ * credit, and the app's data credit returns the moment it closes. */
+.app-picker {
+  position: absolute;
+  inset: 0;
+  z-index: 1200;
+  background: #fff;
+}
+
+/* Above the sheet's own content so it stays readable while the list scrolls
+ * under it. */
+.app-status {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.app-status:empty {
+  display: none;
+}
+
+/* The credit is pinned to the bottom of the viewport above everything else,
+ * including the sheet (z-index 1000) and the picker. ODbL asks for visible
+ * credit, and "visible unless the drawer happens to be over it" is not that —
+ * an earlier version sat under the sheet and vanished in exactly the phases
+ * that draw no map, which is when the sheet is largest. The sheet reserves
+ * room for it below, so nothing is ever hidden behind it either. */
+.app > .attribution {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 1100;
+  padding: 0.4rem 0.75rem calc(0.45rem + env(safe-area-inset-bottom));
+  font-size: 0.7rem;
+  line-height: 1.35;
+  text-align: center;
+
+  /* Opaque, not translucent: the list scrolls behind it, and text sliding
+   * under half-visible text reads as a rendering fault rather than a credit. */
+  background: #fff;
+  border-top: 1px solid #e4e7e9;
+}
+
+.app > .attribution p {
+  margin: 0;
+}
+
+/* Room for the credit bar, so the last result is never behind it.
+ * --app-credit-height is measured from the bar itself in compose-app.ts,
+ * because the number of lines it wraps to depends on the width of the screen
+ * and every guess was wrong on a phone. */
+.app .spot-drawer-content {
+  padding-bottom: var(--app-credit-height, 3.5rem);
+}
+
+/* Keep the results clear of the handle.
+ *
+ * Open, the handle sits over the panel's left edge, vertically centred — which
+ * is where the middle row's first characters are. tour-guide can overlap
+ * freely because its drawer holds a map; ours holds text, and a 36px button
+ * across the start of a park's name is not a detail you can read past. */
+.app .spot-drawer.open .spot-drawer-content {
+  padding-left: 2.75rem;
+}

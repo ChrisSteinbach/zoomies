@@ -1,0 +1,126 @@
+{
+  "_comment": "Captured from https://overpass-api.de/api/interpreter on 2026-07-21 for nwr[leisure=dog_park](around:3000,59.3293,18.0686), trimmed to the elements that exercise normalization. Two deliberate edits, both marked below: the center was stripped from way/485519155, and way/58082448 appears twice.",
+  "version": 0.6,
+  "generator": "Overpass API 0.7.62.11 87bfad18",
+  "osm3s": {
+    "timestamp_osm_base": "2026-07-21T04:37:51Z",
+    "copyright": "The data included in this document is from www.openstreetmap.org. The data is made available under ODbL."
+  },
+  "elements": [
+    {
+      "type": "node",
+      "id": 13245355311,
+      "lat": 59.3207873,
+      "lon": 18.0596507,
+      "tags": {
+        "barrier": "fence",
+        "leisure": "dog_park",
+        "name": "Monteliusvägens hundrastgård",
+        "opening_hours": "24/7",
+        "wheelchair": "yes"
+      }
+    },
+    {
+      "type": "way",
+      "id": 58082448,
+      "center": {
+        "lat": 59.3156731,
+        "lon": 18.0736705
+      },
+      "tags": {
+        "dog": "unleashed",
+        "fence_type": "railings",
+        "fenced": "yes",
+        "leisure": "dog_park",
+        "name": "Björns Trädgårds hundrastgård",
+        "surface": "fine_gravel"
+      }
+    },
+    {
+      "type": "way",
+      "id": 703298765,
+      "center": {
+        "lat": 59.348179,
+        "lon": 18.0556013
+      },
+      "tags": {
+        "area": "yes",
+        "barrier": "fence",
+        "leisure": "dog_park",
+        "lit": "yes",
+        "name": "Category:Vanadislundens hundrastgård",
+        "surface": "grass"
+      }
+    },
+    {
+      "type": "relation",
+      "id": 3181480,
+      "center": {
+        "lat": 59.322249,
+        "lon": 17.8764142
+      },
+      "members": [
+        {
+          "type": "way",
+          "ref": 23519790,
+          "role": "outer"
+        }
+      ],
+      "tags": {
+        "barrier": "no",
+        "dog": "unleashed",
+        "fenced": "no",
+        "leisure": "dog_park",
+        "name": "Ormholmen Hundön - Drottningholm",
+        "surface": "grass",
+        "type": "multipolygon"
+      }
+    },
+    {
+      "type": "relation",
+      "id": 16078225,
+      "center": {
+        "lat": 59.3978317,
+        "lon": 17.956306
+      },
+      "members": [
+        {
+          "type": "way",
+          "ref": 1188859420,
+          "role": "outer"
+        }
+      ],
+      "tags": {
+        "access": "customers",
+        "leisure": "dog_park",
+        "type": "multipolygon"
+      }
+    },
+    {
+      "type": "way",
+      "id": 485519155,
+      "nodes": [1223955836, 4783015631, 4783015630, 1223955836],
+      "tags": {
+        "leisure": "dog_park",
+        "name": "Hospitalparkens hundrastgårdar",
+        "wheelchair": "limited"
+      }
+    },
+    {
+      "type": "way",
+      "id": 58082448,
+      "center": {
+        "lat": 59.3156731,
+        "lon": 18.0736705
+      },
+      "tags": {
+        "dog": "unleashed",
+        "fence_type": "railings",
+        "fenced": "yes",
+        "leisure": "dog_park",
+        "name": "Björns Trädgårds hundrastgård",
+        "surface": "fine_gravel"
+      }
+    }
+  ]
+}

@@ -1,0 +1,122 @@
+/*
+ * The drawer: a full-height panel that slides in from the right edge, over the
+ * map. Enough styling to work on its own; the app stylesheet is free to
+ * override any of it. The panel is positioned against the right of its
+ * container, so that container has to be positioned and has to have a height —
+ * a viewport-height region with the map behind it.
+ *
+ * Taken from tour-guide, where this shape was arrived at on a real phone. The
+ * one rule that must not be lost: the handle is pinned to the panel's *left*
+ * edge and vertically centred, and it carries itself back over the map with a
+ * transform of its own. That is what keeps it on screen and under a thumb once
+ * the panel has gone — a handle that leaves with the drawer cannot bring it
+ * back.
+ */
+
+.spot-drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+
+  /* Above Leaflet's controls, which stop at 1000. */
+  z-index: 1000;
+  display: flex;
+  width: 100%;
+
+  /* Closed: parked off the right edge. */
+  transform: translateX(100%);
+  transition: transform 0.3s ease;
+  will-change: transform;
+}
+
+.spot-drawer[hidden] {
+  display: none;
+}
+
+.spot-drawer.open {
+  transform: translateX(0);
+}
+
+/* While a finger is on it the panel follows the finger, and a transition would
+   make it lag behind. */
+.spot-drawer.dragging {
+  transition: none;
+}
+
+.spot-drawer-handle {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid #ddd;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 15%);
+  color: #666;
+  cursor: pointer;
+
+  /* Closed, the panel is off the right edge and the handle would go with it —
+     so it hangs back over the map by most of its own width. This is the whole
+     reason the drawer can be reopened. */
+  transform: translate(-85%, -50%);
+
+  /* Without this the browser claims the drag for scrolling or for the map, and
+     the panel never moves. */
+  touch-action: none;
+  user-select: none;
+}
+
+.spot-drawer-handle:hover {
+  background: #f5f5f5;
+  color: #333;
+}
+
+.spot-drawer-handle:focus-visible {
+  outline: 3px solid #1a6b3c;
+  outline-offset: 2px;
+}
+
+/* Open, it sits flush against the panel's edge. */
+.spot-drawer.open .spot-drawer-handle {
+  transform: translate(0, -50%);
+}
+
+.spot-drawer-icon {
+  display: block;
+  transition: transform 0.3s ease;
+}
+
+/* Points left to pull the list in, right to send it back. */
+.spot-drawer.open .spot-drawer-icon {
+  transform: rotate(180deg);
+}
+
+.spot-drawer-content {
+  position: relative;
+  z-index: 0;
+  flex: 1;
+
+  /* The list scrolls inside the panel; the panel itself does not grow. */
+  min-width: 0;
+  overflow-y: auto;
+  background: #fff;
+
+  /* A drag that starts on the list should scroll the list, not fight the
+     drawer — which is why the gesture is bound to the handle alone. */
+  overscroll-behavior: contain;
+}
+
+/* On a wide screen the map is worth keeping: half the width is plenty for a
+   list of names and distances. */
+@media (width >= 1024px) {
+  .spot-drawer {
+    width: 50%;
+  }
+}
