@@ -286,6 +286,7 @@ function empty(searchedRadiusM: number): StatusContent {
 type FailureKey =
   | "timeout"
   | "rate-limited"
+  | "busy"
   | "network-unavailable"
   | "malformed-response"
   /** 5xx: the far end fell over, and that is usually temporary. */
@@ -316,10 +317,19 @@ const FAILURE_MESSAGES: Record<FailureKey, FailureMessage> = {
     detail:
       "The map data service did not answer in time. It is free and shared, so it is sometimes busy.",
   },
+  // Genuinely our doing: we asked too often and were told so.
   "rate-limited": {
     title: "Too many requests",
     detail:
       "The map data service has asked us to slow down. Give it a moment before asking again.",
+  },
+  // Not our doing, and the wording matters: this is the shared instance full
+  // of everybody's queries. Blaming the user for opening the app twice would
+  // be both wrong and faintly accusatory.
+  busy: {
+    title: "The map data service is busy",
+    detail:
+      "It is free for everyone to use, and right now it has no capacity to spare. Trying again in a moment usually works.",
   },
   "network-unavailable": {
     title: "No connection",

@@ -157,17 +157,26 @@ function errorForStatus(response: Response): PlaceProviderError {
   const retryAfterMs = parseRetryAfter(response.headers.get("Retry-After"));
   const status = response.status;
 
-  // 429 is the explicit rate limit. 504 from Overpass is not a broken
-  // gateway — it is how the dispatcher says every slot is busy, which is the
-  // same instruction to the caller: back off and come back later.
-  if (status === 429 || status === 504) {
+  // 429 is the explicit rate limit: we asked too often.
+  if (status === 429) {
     return new PlaceProviderError(
       "rate-limited",
-      status === 429
-        ? "Overpass is rate-limiting us"
-        : "Overpass has no free slot",
-      { status, retryAfterMs },
+      "Overpass is rate-limiting us",
+      {
+        status,
+        retryAfterMs,
+      },
     );
+  }
+
+  // 504 from Overpass is not a broken gateway — it is how the dispatcher says
+  // every query slot is taken. Both mean "not now", but only one of them is
+  // about us, and the UI says different things about them.
+  if (status === 504) {
+    return new PlaceProviderError("busy", "Overpass has no free slot", {
+      status,
+      retryAfterMs,
+    });
   }
 
   return new PlaceProviderError(

@@ -546,8 +546,26 @@ describe("when the lookup fails", () => {
 
     const failure = await failureFrom(provider.findDogParks(59.3, 18.1, 3000));
 
-    expect(failure.kind).toBe("rate-limited");
+    expect(failure.kind).toBe("busy");
     expect(failure.retryable).toBe(true);
+  });
+
+  it("does not blame the caller for a service that is merely full", async () => {
+    const busy = createOverpassProvider({
+      fetchImpl: respondingRaw("Gateway Timeout", { status: 504 }),
+    });
+    const throttled = createOverpassProvider({
+      fetchImpl: respondingRaw("Too Many Requests", { status: 429 }),
+    });
+
+    // Both mean "not now", and the UI says different things about them: one is
+    // the shared instance being full, the other is us asking too often.
+    expect((await failureFrom(busy.findDogParks(59.3, 18.1, 3000))).kind).toBe(
+      "busy",
+    );
+    expect(
+      (await failureFrom(throttled.findDogParks(59.3, 18.1, 3000))).kind,
+    ).toBe("rate-limited");
   });
 
   it("reports a server fault with its status", async () => {

@@ -576,3 +576,37 @@ describe("renderStatus, when the browser offers no Geolocation at all", () => {
     expect(buttonLabels(container)).toEqual(["Set my position on the map"]);
   });
 });
+
+describe("renderStatus, when the service is full rather than throttling us", () => {
+  function failedPhase(error: PlaceProviderError): Phase {
+    return { kind: "failed", position: SLUSSEN, error, staleSpots: [] };
+  }
+
+  it("says the service is busy", () => {
+    const container = mount();
+
+    renderStatus(container, failedPhase(failure("busy")), callbacks());
+
+    expect(words(container)).toContain("busy");
+    expect(words(container)).toContain("free for everyone");
+  });
+
+  it("does not accuse the user of asking too often", () => {
+    const container = mount();
+
+    renderStatus(container, failedPhase(failure("busy")), callbacks());
+
+    // A 504 is the shared instance full of everybody's queries. Someone who
+    // opened the app twice is not the reason, and should not be told they are.
+    expect(words(container)).not.toContain("Too many requests");
+    expect(words(container)).not.toContain("slow down");
+  });
+
+  it("still offers a retry, because waiting is what fixes it", () => {
+    const container = mount();
+
+    renderStatus(container, failedPhase(failure("busy")), callbacks());
+
+    expect(buttonLabels(container)).toEqual(["Try again"]);
+  });
+});

@@ -106,7 +106,9 @@ function waitBeforeRetry(
   retriesSoFar: number,
 ): number | undefined {
   if (!(error instanceof PlaceProviderError)) return undefined;
-  if (error.kind !== "rate-limited") return undefined;
+  // Both mean "not now": one because we asked too often, one because the
+  // shared instance has no free slot. Waiting is the right answer to each.
+  if (error.kind !== "rate-limited" && error.kind !== "busy") return undefined;
   if (retriesSoFar >= MAX_RETRIES) return undefined;
 
   // The server's own instruction beats our guess whenever it gave one.

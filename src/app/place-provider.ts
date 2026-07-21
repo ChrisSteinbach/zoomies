@@ -37,9 +37,19 @@ export type PlaceProviderErrorKind =
   /** The request exceeded its deadline. Overpass declares `[timeout:25]`;
    *  the client aborts on a matching deadline of its own. */
   | "timeout"
-  /** We are asking too often — HTTP 429, or Overpass's "slot available
-   *  after" rejection. Back off; do not retry immediately. */
+  /** We are asking too often — HTTP 429. Our own fault, and the remedy is
+   *  ours: back off, and do not retry immediately. */
   | "rate-limited"
+  /**
+   * The service has no capacity right now — Overpass answers 504 when every
+   * query slot is taken.
+   *
+   * Deliberately not the same as `rate-limited`, though both mean "not now".
+   * A 504 is the shared instance being busy with everybody's traffic, not a
+   * throttle aimed at us, and telling a user who has opened the app twice that
+   * they are asking too often is both wrong and faintly accusatory.
+   */
+  | "busy"
   /** Any other non-2xx response. `status` carries the code. */
   | "http-error"
   /** The request never reached a server: offline, DNS failure, CORS. */
@@ -52,6 +62,7 @@ export type PlaceProviderErrorKind =
 const ALWAYS_RETRYABLE: ReadonlySet<PlaceProviderErrorKind> = new Set([
   "timeout",
   "rate-limited",
+  "busy",
   "network-unavailable",
 ]);
 

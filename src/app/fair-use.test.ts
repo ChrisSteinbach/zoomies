@@ -299,3 +299,30 @@ describe("when the failure is not a refusal", () => {
     ).rejects.toBeInstanceOf(TypeError);
   });
 });
+
+describe("a service that is merely full", () => {
+  /** What Overpass sends when every query slot is taken: 504, not 429. */
+  function noFreeSlot(): PlaceProviderError {
+    return new PlaceProviderError("busy", "Overpass has no free slot", {
+      status: 504,
+    });
+  }
+
+  it("waits and tries again, exactly as it does for a rate limit", async () => {
+    let calls = 0;
+    const guarded = withFairUse({
+      findDogParks: () => {
+        calls++;
+        return calls === 1 ? Promise.reject(noFreeSlot()) : Promise.resolve([]);
+      },
+    });
+
+    const lookup = guarded.findDogParks(59.3, 18.1, 3_000);
+    await vi.advanceTimersByTimeAsync(INITIAL_BACKOFF_MS);
+
+    // Being full is the shared instance's problem, not a reason to give up on
+    // the first refusal — and it is what happens in practice.
+    await expect(lookup).resolves.toEqual([]);
+    expect(calls).toBe(2);
+  });
+});
