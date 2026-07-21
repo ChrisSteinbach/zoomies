@@ -26,7 +26,9 @@
   bottom: 1rem;
   left: 1rem;
 
-  /* Leaflet's own controls stop at 1000. */
+  /* Leaflet's own controls stop at 1000 — local to the picker's own
+     stacking context, not the shell scale in styles.css. The number
+     matches --z-sheet, but the two never compete. */
   z-index: 1000;
   min-height: 2.75rem;
   padding: 0.75rem 1.25rem;
@@ -51,7 +53,9 @@
 
   /* The wrapper is a stacking context, so this is what gets compared against
      Leaflet's control panes — the results list inside it cannot win on its
-     own. */
+     own. Local to the picker's own stacking context: the number matches
+     --z-credit in styles.css, but the two never compete — this one never
+     leaves .app-picker. */
   z-index: 1100;
   padding: 0.5rem 0.75rem;
   border-bottom: 1px solid #e0e0e0;

@@ -3,6 +3,25 @@
   --fg: #1a1a1a;
 
   color-scheme: light dark;
+
+  /* The app-shell stacking order, defined once, here — not scattered across
+   * the files that use it. Bottom to top: the results sheet, over the map
+   * and over Leaflet's own controls (which stop at 1000); the OSM credit
+   * bar, over the sheet, because visible attribution is an ODbL licensing
+   * obligation (docs/spec.md §4.1) that must never be covered; the map
+   * picker, the app's only modal, over everything it can cover; the debug
+   * overlay, over even the picker, because a measurement you cannot read is
+   * no measurement at all.
+   *
+   * A tie between any two of these must be written here, deliberately, not
+   * left to accident: the picker and the sheet once both sat at z-index
+   * 1000, the picker lost the tie on DOM order, and "Set my position on the
+   * map" — the only way out of a refused geolocation permission — opened
+   * behind the sheet looking like a dead button. */
+  --z-sheet: 1000;
+  --z-credit: 1100;
+  --z-picker: 1200;
+  --z-debug-overlay: 1300;
 }
 
 body {
@@ -288,7 +307,7 @@ body {
 /* The picker covers everything, including the sheet and the credit bar — while
  * it is open, choosing a position is the only thing to do.
  *
- * The number matters. At the sheet's own z-index of 1000 the picker lost the
+ * The number matters. Sharing the sheet's own --z-sheet, the picker lost the
  * tie on DOM order and opened *behind* it, so "Set my position on the map" —
  * the only way out of a refused permission — looked like a dead button. That
  * is the dead end it exists to prevent. Its own map carries the OSM tile
@@ -296,12 +315,14 @@ body {
 .app-picker {
   position: absolute;
   inset: 0;
-  z-index: 1200;
+  z-index: var(--z-picker);
   background: #fff;
 }
 
 /* Above the sheet's own content so it stays readable while the list scrolls
- * under it. */
+ * under it. Local to the sheet's own stacking context, not the shell scale
+ * above — it never competes with the picker or the credit bar, so it stays a
+ * plain number. */
 .app-status {
   position: sticky;
   top: 0;
@@ -312,18 +333,18 @@ body {
   display: none;
 }
 
-/* The credit is pinned to the bottom of the viewport above everything else,
- * including the sheet (z-index 1000) and the picker. ODbL asks for visible
- * credit, and "visible unless the drawer happens to be over it" is not that —
- * an earlier version sat under the sheet and vanished in exactly the phases
- * that draw no map, which is when the sheet is largest. The sheet reserves
- * room for it below, so nothing is ever hidden behind it either. */
+/* The credit is pinned to the bottom of the viewport above the sheet
+ * (--z-sheet). ODbL asks for visible credit, and "visible unless the drawer
+ * happens to be over it" is not that — an earlier version sat under the
+ * sheet and vanished in exactly the phases that draw no map, which is when
+ * the sheet is largest. The sheet reserves room for it below, so nothing is
+ * ever hidden behind it either. */
 .app > .attribution {
   position: absolute;
   right: 0;
   bottom: 0;
   left: 0;
-  z-index: 1100;
+  z-index: var(--z-credit);
   padding: 0.4rem 0.75rem calc(0.45rem + env(safe-area-inset-bottom));
   font-size: 0.7rem;
   line-height: 1.35;

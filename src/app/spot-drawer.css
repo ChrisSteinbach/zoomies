@@ -19,8 +19,10 @@
   right: 0;
   bottom: 0;
 
-  /* Above Leaflet's controls, which stop at 1000. */
-  z-index: 1000;
+  /* Above Leaflet's controls, which stop at 1000. A var with that number as
+     its fallback: standalone, this file still tells the truth, and a shell
+     that defines --z-sheet controls the real order from one place. */
+  z-index: var(--z-sheet, 1000);
   display: flex;
   width: 100%;
 
@@ -48,6 +50,9 @@
   position: absolute;
   top: 50%;
   left: 0;
+
+  /* Local to the drawer's own stacking context, above the content beside
+     it — nothing here competes with the shell scale. */
   z-index: 1;
   display: flex;
   align-items: center;
@@ -100,6 +105,9 @@
 
 .spot-drawer-content {
   position: relative;
+
+  /* Local to the drawer's own stacking context, below the handle that
+     overlaps its edge — nothing here competes with the shell scale. */
   z-index: 0;
   flex: 1;
 
