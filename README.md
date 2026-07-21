@@ -17,6 +17,9 @@ Data comes from [OpenStreetMap](https://www.openstreetmap.org/) —
 
 ## Status
 
+**Live at <https://chrissteinbach.github.io/zoomies/>** — installable, and
+best opened on a phone, where the GPS is.
+
 **Phase 1 (MVP) is complete and validated against Stockholm.** From a
 position on Södermalm the app returns the nearest dog parks sorted by
 distance, on a map and in a list, with a deep link into the platform maps
@@ -29,8 +32,15 @@ distance to the metre. See `bd show zoomies-bgc.19` for the full record.
 ```bash
 npm install
 npm test          # lint + typecheck + unit tests
-npm run dev       # http://localhost:5173
+npm run dev       # https://localhost:5173 — and https://<lan-ip>:5173 from a phone
 ```
+
+The dev server is https on purpose. The Geolocation API only works in a
+secure context, so over plain http a phone never even sees the permission
+prompt. The certificate is self-signed; accept the warning once.
+
+Deploys are manual — run the **Deploy to GitHub Pages** workflow from the
+Actions tab. Merging to `main` publishes nothing on its own.
 
 Phases 2–4 (hundbad, supplementary amenities, the offline data path) are
 still open:
