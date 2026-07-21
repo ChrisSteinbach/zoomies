@@ -88,3 +88,34 @@ jobs:
           name: coverage
           path: coverage/
           retention-days: 30
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      # Chromium alone: this suite guards the app shell's stacking order, not
+      # cross-browser rendering. `--with-deps` because a bare runner is
+      # missing the shared libraries the browser needs.
+      - name: Install Playwright chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run browser smoke tests
+        run: npm run test:e2e
+
+      # Only when something failed: a passing run's report says nothing that
+      # the log does not.
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

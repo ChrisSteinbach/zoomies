@@ -3,6 +3,9 @@ dist/
 # Service worker output from `vite dev` (vite-plugin-pwa)
 dev-dist/
 coverage/
+# Playwright output (`npm run test:e2e`)
+playwright-report/
+test-results/
 .DS_Store
 *.local
 
