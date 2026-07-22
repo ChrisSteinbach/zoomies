@@ -117,6 +117,96 @@ describe("convertFeatures", () => {
     ]);
   });
 
+  it("decodes an assembled area back to the closed way it came from", () => {
+    // osmium assembles a closed way carrying `area=yes` into a synthetic
+    // area object numbered 2×way-id. The real case that caught this:
+    // Vanadislundens hundrastgård, way 703298765, exported as a1406597530 —
+    // and silently dropped until the decoder learnt the scheme.
+    const feature = {
+      type: "Feature",
+      id: "a1406597530",
+      properties: {
+        leisure: "dog_park",
+        area: "yes",
+        name: "Category:Vanadislundens hundrastgård",
+      },
+      geometry: {
+        type: "MultiPolygon",
+        coordinates: [
+          [
+            [
+              [18.055, 59.347],
+              [18.057, 59.347],
+              [18.057, 59.349],
+              [18.055, 59.349],
+              [18.055, 59.347],
+            ],
+          ],
+        ],
+      },
+    };
+
+    const [spot] = convertFeatures([feature]);
+    expect(spot.id).toBe("way/703298765");
+    expect(spot.kind).toBe("dog_park");
+  });
+
+  it("decodes an odd-numbered area back to its multipolygon relation", () => {
+    // Areas built from relations are numbered 2×relation-id+1: a247 is
+    // relation 123. Without the decoding, every relation-mapped park
+    // vanishes from the dataset while the live path keeps returning it.
+    const feature = {
+      type: "Feature",
+      id: "a247",
+      properties: { leisure: "dog_park" },
+      geometry: {
+        type: "MultiPolygon",
+        coordinates: [
+          [
+            [
+              [18.0, 59.3],
+              [18.01, 59.3],
+              [18.01, 59.31],
+              [18.0, 59.31],
+              [18.0, 59.3],
+            ],
+          ],
+        ],
+      },
+    };
+
+    const [spot] = convertFeatures([feature]);
+    expect(spot.id).toBe("relation/123");
+  });
+
+  it("keeps one spot when a closed way arrives as both its spellings", () => {
+    // Belt and braces around osmium's export config: if the same closed way
+    // ever surfaces both as its linestring ("w9") and as the area assembled
+    // from it ("a18"), both spell the same ring — one spot, not two.
+    const ring = [
+      [18.0, 59.3],
+      [18.01, 59.3],
+      [18.01, 59.31],
+      [18.0, 59.31],
+      [18.0, 59.3],
+    ];
+    const asLine = {
+      type: "Feature",
+      id: "w9",
+      properties: { leisure: "dog_park", name: "Tvillingparken" },
+      geometry: { type: "LineString", coordinates: ring },
+    };
+    const asArea = {
+      type: "Feature",
+      id: "a18",
+      properties: { leisure: "dog_park", name: "Tvillingparken" },
+      geometry: { type: "Polygon", coordinates: [ring] },
+    };
+
+    const spots = convertFeatures([asLine, asArea]);
+    expect(spots.map((spot) => spot.id)).toEqual(["way/9"]);
+  });
+
   it("places an area park at the center of its bounding box", () => {
     // An L-shape whose bounding box spans lon 18.0–18.02, lat 59.3–59.31 —
     // center (lat 59.305, lon 18.01). The average of the vertices lies

@@ -125,16 +125,30 @@ function parsePolyCoordinate(line: string): [number, number] {
  * order osmium happened to write the features in.
  */
 export function convertFeatures(features: unknown[]): DogSpot[] {
+  // First occurrence wins, exactly as the live path's toSpots dedupes its
+  // union query. Duplicates are real here because area decoding maps
+  // osmium's synthetic "a" features back onto way/relation ids: should a
+  // closed way ever surface both as its own linestring and as the area
+  // assembled from it, both spell the same ring, so the copies agree about
+  // everything and which one wins cannot change the answer.
+  const seen = new Set<string>();
   const spots: DogSpot[] = [];
-  for (const feature of features) spots.push(...toFeatureSpots(feature));
+  for (const feature of features) {
+    for (const spot of toFeatureSpots(feature)) {
+      const key = `${spot.kind} ${spot.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      spots.push(spot);
+    }
+  }
   return spots.sort(compareSpots);
 }
 
 /**
  * Plain code-unit comparison, not localeCompare: the order only needs to be
  * stable and identical on every machine that runs the pipeline, and locale
- * collation is neither. (id, kind) is unique — osmium emits each element
- * once, and an element emits at most one spot per kind.
+ * collation is neither. (id, kind) is unique by the time sorting happens —
+ * convertFeatures deduplicates on exactly that key.
  */
 function compareSpots(a: DogSpot, b: DogSpot): number {
   if (a.id !== b.id) return a.id < b.id ? -1 : 1;
@@ -175,12 +189,22 @@ function toFeatureSpots(feature: unknown): DogSpot[] {
 }
 
 /**
- * osmium's `--add-unique-id=type_id` feature ids ("n123" | "w456" | "r789")
- * as the app's typed ids ("node/123" | "way/456" | "relation/789") — the
- * same identity the live path builds from an element's type and id, so a
- * spot keeps its id across sources and the two can be deduplicated against
- * each other. Anything else reads as no identity at all, and the feature
- * is dropped.
+ * osmium's `--add-unique-id=type_id` feature ids as the app's typed ids
+ * ("node/123" | "way/456" | "relation/789") — the same identity the live
+ * path builds from an element's type and id, so a spot keeps its id across
+ * sources and the two can be deduplicated against each other.
+ *
+ * Four prefixes, not three. Nodes, ways and relations arrive as "n1"/"w2"/
+ * "r3", but osmium *assembles areas* — closed ways carrying `area=yes`, and
+ * multipolygon relations — into synthetic area objects numbered
+ * 2×way-id and 2×relation-id+1, exported as "a<N>". Decoding that scheme
+ * back to the underlying element is not optional: without it every
+ * area-tagged park and every relation-mapped park silently vanishes from
+ * the dataset. Found the hard way on the first real run — Vanadislundens
+ * hundrastgård (way 703298765, tagged `area=yes`) exported as
+ * "a1406597530" and dropped, while the live path kept returning it.
+ *
+ * Anything else reads as no identity at all, and the feature is dropped.
  */
 const OSM_TYPE_BY_PREFIX: Readonly<Record<string, string>> = {
   n: "node",
@@ -188,12 +212,20 @@ const OSM_TYPE_BY_PREFIX: Readonly<Record<string, string>> = {
   r: "relation",
 };
 
-const OSMIUM_TYPE_ID = /^([nwr])(\d+)$/;
+const OSMIUM_TYPE_ID = /^([nwra])(\d+)$/;
 
 function toSpotId(id: unknown): string | undefined {
   if (typeof id !== "string") return undefined;
   const match = OSMIUM_TYPE_ID.exec(id);
-  return match ? `${OSM_TYPE_BY_PREFIX[match[1]]}/${match[2]}` : undefined;
+  if (!match) return undefined;
+  const [, prefix, digits] = match;
+  if (prefix !== "a") return `${OSM_TYPE_BY_PREFIX[prefix]}/${digits}`;
+
+  // BigInt so the halving stays exact whatever size OSM ids grow to.
+  const areaId = BigInt(digits);
+  return areaId % 2n === 0n
+    ? `way/${areaId / 2n}`
+    : `relation/${(areaId - 1n) / 2n}`;
 }
 
 /** A GeoJSON position, in GeoJSON's own axis order. */
