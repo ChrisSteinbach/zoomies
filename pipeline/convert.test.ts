@@ -782,3 +782,157 @@ describe("assertDatasetSane", () => {
     expect(() => assertDatasetSane(dataset, "europe/denmark")).not.toThrow();
   });
 });
+
+// ---------- assertDatasetSane: the planet ----------
+//
+// Synthetic again, and bigger: the planet gates ask "does this cut hold a
+// plausible world?", and programmatic clusters of the right size at the
+// right cities answer that completely. Twenty thousand looped parks cost
+// milliseconds; a real planet fixture would cost gigabytes and prove no
+// more.
+
+const BERLIN = { lat: 52.52, lon: 13.405 };
+const NEW_YORK = { lat: 40.7128, lon: -74.006 };
+const SYDNEY = { lat: -33.8688, lon: 151.2093 };
+/** Far from every gated city: bulk that must trip no per-city gate. */
+const NAIROBI = { lat: -1.286, lon: 36.817 };
+
+/**
+ * Parks clustered within ~500 m of a center, ids starting at idBase so
+ * clusters can be concatenated without colliding.
+ */
+function parkClusterAt(
+  center: { lat: number; lon: number },
+  count: number,
+  idBase: number,
+): DogSpot[] {
+  return Array.from({ length: count }, (_, i): DogSpot => ({
+    id: `node/${idBase + i}`,
+    kind: "dog_park",
+    lat: center.lat + (i % 10) * 0.0005,
+    lon: center.lon,
+    tags: {},
+    provenance: "designated",
+  }));
+}
+
+/**
+ * A world that clears every planet gate, with knobs to sink one at a time.
+ * Defaults total 20,040 dog parks (≥ 20,000) with each gated city over its
+ * own floor; tests that sink a city knob top the Nairobi bulk back up so
+ * only the gate under test can be the one that trips.
+ */
+function planetSpots(
+  counts: {
+    stockholm?: number;
+    berlin?: number;
+    newYork?: number;
+    sydney?: number;
+    elsewhere?: number;
+    bathing?: number;
+  } = {},
+): DogSpot[] {
+  const {
+    stockholm = 25,
+    berlin = 25,
+    newYork = 25,
+    sydney = 15,
+    elsewhere = 19_950,
+    bathing = 45,
+  } = counts;
+  return [
+    ...parkClusterAt(STOCKHOLM, stockholm, 1_000_000),
+    ...parkClusterAt(BERLIN, berlin, 2_000_000),
+    ...parkClusterAt(NEW_YORK, newYork, 3_000_000),
+    ...parkClusterAt(SYDNEY, sydney, 4_000_000),
+    ...parkClusterAt(NAIROBI, elsewhere, 5_000_000),
+    ...bathingSpots(bathing),
+  ];
+}
+
+describe("assertDatasetSane (planet)", () => {
+  it("passes a dataset that meets every planet gate", () => {
+    const dataset = datasetWith(planetSpots(), "planet");
+
+    expect(() => assertDatasetSane(dataset, "planet")).not.toThrow();
+  });
+
+  it("throws when the planet's dog park total collapses", () => {
+    // 10,090 parks is half of taginfo's measured world — a broken filter,
+    // not a plausible planet.
+    const dataset = datasetWith(planetSpots({ elsewhere: 10_000 }), "planet");
+
+    expect(() => assertDatasetSane(dataset, "planet")).toThrow(
+      /only 10090 dog parks/,
+    );
+  });
+
+  it("throws when Stockholm's 3 km turns up thin", () => {
+    // 19 is one short of the spec's floor; the total stays over 20,000, so
+    // only the Stockholm gate can be what trips.
+    const dataset = datasetWith(
+      planetSpots({ stockholm: 19, elsewhere: 19_956 }),
+      "planet",
+    );
+
+    expect(() => assertDatasetSane(dataset, "planet")).toThrow(
+      /within 3 km of central Stockholm/,
+    );
+  });
+
+  it("throws when Berlin's 50 km turns up thin", () => {
+    const dataset = datasetWith(
+      planetSpots({ berlin: 19, elsewhere: 19_956 }),
+      "planet",
+    );
+
+    expect(() => assertDatasetSane(dataset, "planet")).toThrow(
+      /within 50 km of Berlin/,
+    );
+  });
+
+  it("throws when New York's 50 km turns up thin", () => {
+    const dataset = datasetWith(
+      planetSpots({ newYork: 19, elsewhere: 19_956 }),
+      "planet",
+    );
+
+    expect(() => assertDatasetSane(dataset, "planet")).toThrow(
+      /within 50 km of New York/,
+    );
+  });
+
+  it("throws when Sydney's 50 km turns up thin", () => {
+    const dataset = datasetWith(
+      planetSpots({ sydney: 9, elsewhere: 19_956 }),
+      "planet",
+    );
+
+    expect(() => assertDatasetSane(dataset, "planet")).toThrow(
+      /within 50 km of Sydney/,
+    );
+  });
+
+  it("throws when bathing spots fall below the one-country floor", () => {
+    // Sweden alone measured 40 on 2026-07-22; a planet with 39 is broken.
+    const dataset = datasetWith(planetSpots({ bathing: 39 }), "planet");
+
+    expect(() => assertDatasetSane(dataset, "planet")).toThrow(
+      /only 39 bathing spots planet-wide/,
+    );
+  });
+
+  it("judges a dataset by its region's thresholds, not another's", () => {
+    // The same spots are a healthy Sweden and a broken planet: the verdict
+    // must follow the region stamp, or the regional CLI could never pass —
+    // and a collapsed planet could hide behind Sweden's smaller numbers.
+    const spots = parksAround(STOCKHOLM, 220).concat(bathingSpots(6));
+
+    expect(() =>
+      assertDatasetSane(datasetWith(spots), "europe/sweden"),
+    ).not.toThrow();
+    expect(() =>
+      assertDatasetSane(datasetWith(spots, "planet"), "planet"),
+    ).toThrow(/only 220 dog parks/);
+  });
+});

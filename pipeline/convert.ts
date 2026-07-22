@@ -362,6 +362,9 @@ export function buildDataset(input: BuildDatasetInput): Dataset {
 /** The region whose expected contents this pipeline knows first-hand. */
 export const SWEDEN_REGION = "europe/sweden";
 
+/** The whole-planet cut the daily update job builds (update-state.ts). */
+export const PLANET_REGION = "planet";
+
 /** Central Stockholm — the one city the spec requires to work (§2.1). */
 const STOCKHOLM = { lat: 59.3293, lon: 18.0686 } as const;
 const STOCKHOLM_RADIUS_M = 3_000;
@@ -389,6 +392,43 @@ const SWEDEN_MIN_STOCKHOLM_DOG_PARKS = 20;
 const SWEDEN_MIN_BATHING_SPOTS = 5;
 
 /**
+ * Planet-wide floor for dog parks. taginfo counted 29,839 leisure=dog_park
+ * objects worldwide on 2026-07-21, so a total below 20,000 means the filter
+ * or the converter broke — not that the planet lost a third of its dog
+ * parks overnight.
+ */
+const PLANET_MIN_DOG_PARKS = 20_000;
+
+/**
+ * The spec's hard requirement (§2.1) rides inside the planet build: central
+ * Stockholm's 3 km held 31 dog parks on 2026-07-21 (field-validated against
+ * live Overpass), and a planet cut that cannot find 20 of them is broken no
+ * matter what the global total says.
+ */
+const PLANET_MIN_STOCKHOLM_DOG_PARKS = 20;
+
+/**
+ * Three continents' sanity, thresholds far under reality: a mangled
+ * boundary, a broken geometry path or a half-applied diff shows up as a
+ * hole in some hemisphere long before it dents the global count. All three
+ * metros hold multiples of these numbers.
+ */
+const METRO_RADIUS_M = 50_000;
+const BERLIN = { lat: 52.52, lon: 13.405 } as const;
+const PLANET_MIN_BERLIN_DOG_PARKS = 20;
+const NEW_YORK = { lat: 40.7128, lon: -74.006 } as const;
+const PLANET_MIN_NEW_YORK_DOG_PARKS = 20;
+const SYDNEY = { lat: -33.8688, lon: 151.2093 } as const;
+const PLANET_MIN_SYDNEY_DOG_PARKS = 10;
+
+/**
+ * Planet-wide bathing floor. Sweden alone measured 40 bathing spots on
+ * 2026-07-22, so a planet holding fewer than the one country the layer was
+ * field-validated in cannot be a real cut.
+ */
+const PLANET_MIN_BATHING_SPOTS = 40;
+
+/**
  * The gate between a build and the publish step: throws, with a message
  * naming what broke, on any dataset that cannot plausibly be a real cut of
  * its region. The thresholds sit far below field-measured reality so that
@@ -412,8 +452,12 @@ export function assertDatasetSane(dataset: Dataset, region: string): void {
 
   // Thresholds are per-region knowledge. Another region's extract passes on
   // the generic gates alone until someone field-validates numbers for it.
-  if (region !== SWEDEN_REGION) return;
+  if (region === SWEDEN_REGION) assertSwedenSane(dataset);
+  if (region === PLANET_REGION) assertPlanetSane(dataset);
+}
 
+/** The Sweden gates, exactly as field-validated on 2026-07-21. */
+function assertSwedenSane(dataset: Dataset): void {
   const parks = dataset.spots.filter((spot) => spot.kind === "dog_park");
   if (parks.length < SWEDEN_MIN_DOG_PARKS) {
     throw new Error(
@@ -438,6 +482,72 @@ export function assertDatasetSane(dataset: Dataset, region: string): void {
     throw new Error(
       `Dataset sanity: only ${bathing.length} bathing spots country-wide, ` +
         `expected at least ${SWEDEN_MIN_BATHING_SPOTS}`,
+    );
+  }
+}
+
+/**
+ * The planet gates: the global floor first, then one city per gated
+ * continent, then the bathing layer. Same philosophy as Sweden's — each
+ * threshold sits far below field-measured reality, so genuine OSM drift
+ * never trips one; only a broken filter, converter, boundary or half-applied
+ * diff can get this far and still fail here.
+ */
+function assertPlanetSane(dataset: Dataset): void {
+  const parks = dataset.spots.filter((spot) => spot.kind === "dog_park");
+  if (parks.length < PLANET_MIN_DOG_PARKS) {
+    throw new Error(
+      `Dataset sanity: the planet has only ${parks.length} dog parks, ` +
+        `expected at least ${PLANET_MIN_DOG_PARKS} — the filter or converter ` +
+        `broke (taginfo counted 29,839 worldwide on 2026-07-21)`,
+    );
+  }
+
+  const parksWithin = (
+    center: { lat: number; lon: number },
+    radiusM: number,
+  ): number =>
+    parks.filter((spot) => haversineMeters(center, spot) <= radiusM).length;
+
+  const nearStockholm = parksWithin(STOCKHOLM, STOCKHOLM_RADIUS_M);
+  if (nearStockholm < PLANET_MIN_STOCKHOLM_DOG_PARKS) {
+    throw new Error(
+      `Dataset sanity: only ${nearStockholm} dog parks within 3 km of ` +
+        `central Stockholm, expected at least ${PLANET_MIN_STOCKHOLM_DOG_PARKS} ` +
+        `— the spec's hard requirement (§2.1) rides inside the planet build`,
+    );
+  }
+
+  const nearBerlin = parksWithin(BERLIN, METRO_RADIUS_M);
+  if (nearBerlin < PLANET_MIN_BERLIN_DOG_PARKS) {
+    throw new Error(
+      `Dataset sanity: only ${nearBerlin} dog parks within 50 km of Berlin, ` +
+        `expected at least ${PLANET_MIN_BERLIN_DOG_PARKS}`,
+    );
+  }
+
+  const nearNewYork = parksWithin(NEW_YORK, METRO_RADIUS_M);
+  if (nearNewYork < PLANET_MIN_NEW_YORK_DOG_PARKS) {
+    throw new Error(
+      `Dataset sanity: only ${nearNewYork} dog parks within 50 km of New York, ` +
+        `expected at least ${PLANET_MIN_NEW_YORK_DOG_PARKS}`,
+    );
+  }
+
+  const nearSydney = parksWithin(SYDNEY, METRO_RADIUS_M);
+  if (nearSydney < PLANET_MIN_SYDNEY_DOG_PARKS) {
+    throw new Error(
+      `Dataset sanity: only ${nearSydney} dog parks within 50 km of Sydney, ` +
+        `expected at least ${PLANET_MIN_SYDNEY_DOG_PARKS}`,
+    );
+  }
+
+  const bathing = dataset.spots.filter((spot) => spot.kind === "bathing_spot");
+  if (bathing.length < PLANET_MIN_BATHING_SPOTS) {
+    throw new Error(
+      `Dataset sanity: only ${bathing.length} bathing spots planet-wide, ` +
+        `expected at least ${PLANET_MIN_BATHING_SPOTS} — Sweden alone ` +
+        `measured 40 on 2026-07-22`,
     );
   }
 }

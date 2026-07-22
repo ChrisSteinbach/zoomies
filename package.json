@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "data:build": "tsx pipeline/build-dataset.ts",
     "data:seed": "tsx pipeline/seed-state.ts",
+    "data:update": "tsx pipeline/update-state.ts",
     "test": "npm run lint && vitest run",
     "test:e2e": "tsc --noEmit -p e2e && playwright test",
     "test:watch": "vitest",
