@@ -46,6 +46,25 @@
   cursor: default;
 }
 
+/* The way out. A normal-flow row above the search bar rather than an overlay,
+   so it can never end up sharing a corner with Leaflet's zoom control or
+   attribution — both confined to the map, which starts below this row — and
+   sized to its own text rather than stretched by the picker's flex column, so
+   it reads as the lighter, secondary action the confirm button is not. */
+.map-picker-cancel {
+  align-self: flex-start;
+  margin: 0.5rem 0 0 0.75rem;
+  min-height: 2.75rem;
+  padding: 0 1rem;
+  border: 1px solid #1a6b3c;
+  border-radius: 0.5rem;
+  background: none;
+  color: #1a6b3c;
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
 /* Place search: a bar above the map whose results overlay it. */
 
 .map-picker-search {

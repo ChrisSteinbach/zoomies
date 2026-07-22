@@ -74,6 +74,14 @@ export interface MapPickerOptions {
    * at.
    */
   onPick: (position: LatLon) => void;
+  /**
+   * Called when the user backs out without choosing anything. Optional
+   * because tests that never touch the control have no need of it, but the
+   * composition root always wires one: the picker can open over results
+   * already on screen (docs/spec.md §7.1), and without a way to say "never
+   * mind" the only way out is confirming a location that was never wanted.
+   */
+  onCancel?: () => void;
   /** Where to open the map. Omit — the usual case, since the whole reason we
    *  are here is not knowing — to open on the world. */
   center?: LatLon;
@@ -97,7 +105,12 @@ export interface MapPickerHandle {
  */
 export function createMapPicker(
   container: HTMLElement,
-  { onPick, center, search = (query) => searchPlaces(query) }: MapPickerOptions,
+  {
+    onPick,
+    onCancel,
+    center,
+    search = (query) => searchPlaces(query),
+  }: MapPickerOptions,
 ): MapPickerHandle {
   container.classList.add("map-picker");
 
@@ -111,6 +124,16 @@ export function createMapPicker(
   // offering an action that would have no meaning.
   confirmButton.disabled = true;
   confirmButton.textContent = PROMPT_LABEL;
+
+  // Sits above the search bar, in normal flow rather than overlaid, so it
+  // can never end up sharing a corner with Leaflet's own zoom control (top
+  // left of the map) or its attribution (bottom right) — both of which live
+  // inside `mapElement`, which starts only below this row.
+  const cancelButton = document.createElement("button");
+  cancelButton.type = "button";
+  cancelButton.className = "map-picker-cancel";
+  cancelButton.textContent = "Cancel";
+  cancelButton.setAttribute("aria-label", "Cancel choosing a location");
 
   container.append(mapElement, confirmButton);
 
@@ -163,6 +186,11 @@ export function createMapPicker(
     onPick(chosen);
   });
 
+  cancelButton.addEventListener("click", () => {
+    if (destroyed) return;
+    onCancel?.();
+  });
+
   const placeSearch = createPlaceSearch({
     search,
     onSelect: ({ position }) => {
@@ -171,6 +199,7 @@ export function createMapPicker(
     },
   });
   container.insertBefore(placeSearch.element, mapElement);
+  container.insertBefore(cancelButton, placeSearch.element);
 
   return {
     destroy() {
@@ -180,6 +209,7 @@ export function createMapPicker(
       if (destroyed) return;
       destroyed = true;
 
+      cancelButton.remove();
       placeSearch.element.remove();
       confirmButton.remove();
       stopTrackingBounds();
