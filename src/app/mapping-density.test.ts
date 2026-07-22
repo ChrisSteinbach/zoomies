@@ -1,9 +1,10 @@
 import { mappingDensityAt } from "./mapping-density";
 
 // City tables straight out of docs/spec.md §4.5.1's dense list — Stockholm,
-// Scandinavia, Germany, the US, the UK, Australia — and a sparse spread
-// across everywhere else, including near neighbours of dense regions and a
-// handful of the sharpest borders the rings have to hold.
+// Scandinavia, Germany, the US and Canada, the UK and Ireland, Australia
+// and New Zealand — and a sparse spread across everywhere else, including
+// near neighbours of dense regions and a handful of the sharpest borders
+// the rings have to hold.
 describe("mappingDensityAt", () => {
   const denseCities: Array<[city: string, lat: number, lon: number]> = [
     ["Stockholm", 59.33, 18.07],
@@ -33,6 +34,9 @@ describe("mappingDensityAt", () => {
     ["Cardiff", 51.48, -3.18],
     ["Inverness", 57.48, -4.22],
     ["Hastings", 50.85, 0.57],
+    ["Dublin", 53.35, -6.26],
+    ["Cork", 51.9, -8.47],
+    ["Belfast", 54.6, -5.93],
     ["New York", 40.71, -74.01],
     ["Los Angeles", 34.05, -118.24],
     ["Chicago", 41.88, -87.63],
@@ -47,12 +51,27 @@ describe("mappingDensityAt", () => {
     ["Yuma", 32.69, -114.63],
     ["Anchorage", 61.22, -149.9],
     ["Honolulu", 21.31, -157.86],
+    ["Juneau", 58.3, -134.42],
+    ["Vancouver", 49.28, -123.12],
+    ["Whitehorse", 60.72, -135.05],
+    ["Calgary", 51.05, -114.07],
+    ["Winnipeg", 49.9, -97.14],
+    ["Toronto", 43.65, -79.38],
+    ["Montreal", 45.5, -73.57],
+    ["Halifax", 44.65, -63.58],
+    ["Iqaluit", 63.75, -68.52],
+    ["St John's", 47.56, -52.71],
+    ["Grand Bank", 47.1, -55.77],
     ["Sydney", -33.87, 151.21],
     ["Melbourne", -37.81, 144.96],
     ["Perth", -31.95, 115.86],
     ["Brisbane", -27.47, 153.03],
     ["Cairns", -16.92, 145.77],
     ["Hobart", -42.88, 147.33],
+    ["Auckland", -36.85, 174.76],
+    ["Wellington", -41.29, 174.78],
+    ["Christchurch", -43.53, 172.64],
+    ["Dunedin", -45.87, 170.5],
   ];
 
   it.each(denseCities)("reads %s as dense", (_city, lat, lon) => {
@@ -80,9 +99,10 @@ describe("mappingDensityAt", () => {
     ["St Petersburg", 59.93, 30.36],
     ["Vyborg", 60.71, 28.75],
     ["Riga", 56.95, 24.11],
-    ["Dublin", 53.35, -6.26],
     ["Reykjavik", 64.15, -21.94],
-    ["Vancouver", 49.28, -123.12],
+    ["Nuuk", 64.18, -51.69],
+    ["St-Pierre", 46.78, -56.18],
+    ["Miquelon", 47.1, -56.38],
     ["Tijuana", 32.51, -117.04],
     ["Mexicali", 32.66, -115.47],
     ["Mexico City", 19.43, -99.13],
@@ -109,19 +129,15 @@ describe("mappingDensityAt", () => {
   // loss, not an oversight — named individually so a regression shows up as
   // exactly the scenario that broke, not a row number in a shared table.
 
-  it("reads Belfast as sparse: the UK ring omits Northern Ireland rather than risk enclosing Republic of Ireland land at coarse scale", () => {
-    expect(mappingDensityAt({ lat: 54.6, lon: -5.93 })).toBe("sparse");
+  it("reads the Isle of Man as sparse: a Crown dependency between the GB and Ireland rings, on neither list", () => {
+    expect(mappingDensityAt({ lat: 54.15, lon: -4.48 })).toBe("sparse");
   });
 
-  it("reads Juneau as sparse: Alaska's panhandle can't be boxed without also enclosing British Columbia", () => {
-    expect(mappingDensityAt({ lat: 58.3, lon: -134.42 })).toBe("sparse");
+  it("reads the Chatham Islands as sparse: across the antimeridian from the New Zealand box, which no ring may straddle", () => {
+    expect(mappingDensityAt({ lat: -43.95, lon: -176.55 })).toBe("sparse");
   });
 
-  it("reads Auckland as sparse: New Zealand isn't on the spec's §4.5.1 dense list", () => {
-    expect(mappingDensityAt({ lat: -36.85, lon: 174.76 })).toBe("sparse");
-  });
-
-  it("reads Toronto as sparse: the CONUS ring traces the Great Lakes coarsely rather than precisely", () => {
-    expect(mappingDensityAt({ lat: 43.65, lon: -79.38 })).toBe("sparse");
+  it("reads Resolute as sparse: the mainland ring's Arctic cap stops short of the high-Arctic archipelago", () => {
+    expect(mappingDensityAt({ lat: 74.69, lon: -94.83 })).toBe("sparse");
   });
 });

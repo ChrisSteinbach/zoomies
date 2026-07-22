@@ -111,7 +111,8 @@ Notes:
 ### 4.5 Known data-quality caveats — encode these assumptions
 
 1. **`leisure=dog_park` is trustworthy and dense** in Stockholm,
-   Scandinavia, Germany, US, UK, Australia. Sparse elsewhere.
+   Scandinavia, Germany, US, Canada, UK, Ireland, Australia,
+   New Zealand. Sparse elsewhere.
 2. **Bathing data is thin.** Treat the hundbad layer as best-effort;
    the name-regex fallback (§4.3) matters in Sweden.
 3. **OSM records existence, not current legality.** In Stockholm (and

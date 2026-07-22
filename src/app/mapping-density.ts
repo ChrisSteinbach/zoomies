@@ -7,8 +7,8 @@ import { pointInRing } from "./coverage";
  * when a query comes back with no dog parks?
  *
  * docs/spec.md §4.5.1: `leisure=dog_park` tagging is dense and trustworthy
- * in Stockholm, Scandinavia, Germany, the US, the UK and Australia, and
- * sparse everywhere else. An empty result from a dense region probably means
+ * in Stockholm, Scandinavia, Germany, the US, Canada, the UK, Ireland,
+ * Australia and New Zealand, and sparse everywhere else. An empty result from a dense region probably means
  * there really are no dog parks nearby; the same empty result from a sparse
  * region probably means nobody has mapped them yet. The UI needs to tell
  * those two silences apart, and this module is the only thing that knows
@@ -39,16 +39,18 @@ import { pointInRing } from "./coverage";
  * offline dataset. Say "lat, lon" out loud when adding a vertex. Containment
  * reuses {@link pointInRing} unchanged: same ray cast, same
  * antimeridian-and-poles caveat — no vertex may sit at ±180 or beyond, and
- * no ring may straddle the antimeridian. That caveat bites exactly once
- * here, in ALASKA below, which is boxed in from the antimeridian side
- * rather than wrapped across it.
+ * no ring may straddle the antimeridian. That caveat bites twice here:
+ * ALASKA below is boxed in from the antimeridian side rather than wrapped
+ * across it, and NEW_ZEALAND stops at 179E, leaving the Chatham Islands on
+ * the far side.
  *
- * Three countries on nobody's naive guess-list are sparse here too: Canada,
- * Ireland and New Zealand are simply not on §4.5.1's list, however decent
- * their real-world tagging might be. That is this module encoding the spec
- * as written, not a judgement made here — if the list undersells them, the
- * fix is a one-line edit to docs/spec.md §4.5.1, not a ring drawn here to
- * quietly disagree with it.
+ * The near-neighbours still sparse are strict readings, not oversights:
+ * Iceland and the Isle of Man (see NORDICS and GREAT_BRITAIN), Greenland,
+ * and St-Pierre-et-Miquelon — France, one boat-hop off Newfoundland, and
+ * the one place that forces NEWFOUNDLAND below to hold a genuinely sharp
+ * edge. This module encodes §4.5.1 as written; when the list moved —
+ * Canada, Ireland and New Zealand joined it — the rings moved with it,
+ * not ahead of it.
  */
 
 /** Whether OSM's dog-park layer is dense enough near a position to read an
@@ -158,16 +160,13 @@ const GERMANY: Ring = [
 ];
 
 /**
- * Great Britain only. Northern Ireland is deliberately left sparse: any ring
- * coarse enough for this module to hand-draw could not wrap Northern Ireland
- * without also enclosing Republic-of-Ireland land at city scale, which is
- * the bad-direction mistake. Leaving it out costs Belfast an over-strong
- * hedge it may not deserve — the cheap direction, and a documented one.
- * Dublin, on the Republic's own soil, is unambiguously sparse either way,
- * and Ireland the country is not on §4.5.1's list regardless (see the
- * module header). The southeast corner is drawn to keep Calais and the
- * French coast clear of the Channel crossing rather than hugging the
- * English shore.
+ * Great Britain only — Northern Ireland rides with IRELAND below, which
+ * wraps the whole island now that both of its countries are on §4.5.1's
+ * list; this ring predates that and never needed redrawing. The Isle of
+ * Man, a Crown dependency on neither list, sits between the two rings and
+ * reads sparse — the strict reading, kept deliberately. The southeast
+ * corner is drawn to keep Calais and the French coast clear of the Channel
+ * crossing rather than hugging the English shore.
  */
 const GREAT_BRITAIN: Ring = [
   [50.0, -5.7],
@@ -191,16 +190,14 @@ const GREAT_BRITAIN: Ring = [
 ];
 
 /**
- * The Lower 48. Three borders drawn with real care, one gap-graze accepted
- * along the way:
- *  - North (Canada), the 49th parallel: Seattle is in, Vancouver is out.
- *    The Great Lakes are traced coarsely rather than precisely — precision
- *    there buys nothing a phone-sized query needs — which lets the ring
- *    graze Canadian border towns in the Detroit/Windsor pocket. That graze
- *    is accepted and expected, not tested for: it sits at hamlet-to-town
- *    scale, the same order of imprecision as the rest of that shoreline.
- *    The Niagara river mouth is the same bargain in the other direction:
- *    keeping Buffalo costs a graze of Fort Erie across the river.
+ * The Lower 48, with one border that still needs real care — Mexico — and
+ * one that used to:
+ *  - North (Canada): drawn along the 49th parallel and the Great Lakes
+ *    back when Canada was off the list and this was the module's longest
+ *    bad-direction frontier. Canada is dense now and CANADA_MAINLAND
+ *    overlaps this edge from the north, so the seam is as free as the
+ *    Nordics/Germany one — the precision here is harmless history, kept
+ *    because redrawing a tested border buys nothing.
  *  - South (Mexico), the Pacific end: San Diego is in, Tijuana is out, a
  *    gap that needed its vertex placed with more care than the rest of this
  *    ring holds — see the inline comment below. From there east the chain
@@ -223,10 +220,11 @@ const CONUS: Ring = [
   [48.99, -124.8],
   [49.0, -95.15],
   [49.0, -84.5],
-  [45.0, -83.5], // Great Lakes traced coarsely; Detroit/Windsor grazes here.
+  [45.0, -83.5], // Great Lakes traced coarsely — a free seam now that
+  // CANADA_MAINLAND overlaps from the north.
   [42.0, -82.7],
-  [42.85, -79.05], // Niagara: Buffalo in; Fort Erie, its cross-river twin,
-  // grazes in with it — the same accepted pocket as Detroit/Windsor.
+  [42.85, -79.05], // Niagara: placed to keep Buffalo back when Fort Erie
+  // across the river was sparse ground; both banks are dense now.
   [44.0, -76.4],
   [45.0, -74.7],
   [45.0, -67.0],
@@ -252,22 +250,20 @@ const CONUS: Ring = [
 
 /**
  * A box, not a coastline — Alaska's own shape is too intricate for this
- * module's purposes, and a box loses less than it might: from the
- * antimeridian side (lon -179.99, never crossing it — see coverage.ts on
- * why a ring may not straddle ±180) in to the Canadian border at ~141W, and
- * roughly 51.5N to 71.5N. That box drops two real pieces of Alaska on
- * purpose: the Aleutians west of the antimeridian (Attu included) are
- * unreachable without crossing it, and the southeastern panhandle cannot be
- * boxed without also enclosing a strip of British Columbia — the
- * bad-direction mistake. Juneau (58.30N, -134.42), in the panhandle, is
- * sparse as a result: a documented, deliberate loss, not a gap in the box's
- * arithmetic.
+ * module's purposes. From the antimeridian side (lon -179.99, never
+ * crossing it — see coverage.ts on why a ring may not straddle ±180) east
+ * to 129.9W: past the 141W border and clean over the panhandle, which
+ * stopped being unboxable the day British Columbia's side of the line
+ * turned dense — Juneau reads dense now, and the strip of BC the box
+ * encloses is a free overlap, not a mistake. The one real loss left is the
+ * Aleutians west of the antimeridian (Attu included), unreachable without
+ * crossing it.
  */
 const ALASKA: Ring = [
   [51.5, -179.99],
   [71.5, -179.99],
-  [71.5, -141],
-  [51.5, -141],
+  [71.5, -129.9],
+  [51.5, -129.9],
 ];
 
 /** A small box around the main islands; Honolulu sits well inside it. */
@@ -291,10 +287,8 @@ const HAWAII: Ring = [
  * The one sharp edge is the north: Cape York is in, Port Moresby is out,
  * and the cut runs through the Torres Strait at roughly 10.4S rather than
  * hugging either coast — which loses the Strait's own islands to the
- * sparse side, an accepted cost at that scale. New Zealand is not on
- * §4.5.1's list and stays sparse for the same reason Canada and Ireland do
- * (see the module header): Auckland is sparse by that reading, not by a
- * judgement made here.
+ * sparse side, an accepted cost at that scale. New Zealand has its own
+ * ring below.
  */
 const AUSTRALIA: Ring = [
   [-10.4, 142.0],
@@ -325,15 +319,104 @@ const AUSTRALIA: Ring = [
   [-14.5, 144.8],
 ];
 
+/**
+ * Continental Canada, drawn lazily on purpose — the luxury of joining a
+ * list your neighbours are already on. The southern boundary runs straight
+ * through the northern US and the western one into Alaska's box, free
+ * overlaps both (the Nordics/Germany rule); the coasts spill to sea; and
+ * the north stops at 74.5N, short of the high-Arctic archipelago —
+ * Resolute and everything beyond read sparse, a sliver-class loss where
+ * sparse is the honest answer anyway. Only two stretches face ground that
+ * is not on the list: the east coast is kept well clear of Greenland
+ * across Baffin Bay and the Davis Strait, and the Maritimes chain swings
+ * outside Nova Scotia's Atlantic shore — while St-Pierre-et-Miquelon is
+ * NEWFOUNDLAND's problem, below.
+ */
+const CANADA_MAINLAND: Ring = [
+  [48.2, -125.8],
+  [54.5, -134.5], // Sea west of Haida Gwaii; its far shore is the sliver lost.
+  [59.9, -141.5],
+  [69.8, -141.5], // The Alaska seam — ALASKA's box overlaps it, freely.
+  [74.5, -120],
+  [74.5, -93], // Arctic cap: Victoria Island in, Resolute and beyond out.
+  [72.8, -77],
+  [66.5, -60.5], // Baffin's SE coast — Davis Strait keeps Greenland far out.
+  [60.3, -62.5],
+  [54.5, -55.3],
+  [51.9, -55.4], // Strait of Belle Isle; NEWFOUNDLAND takes over south of it.
+  [47.2, -59.9], // Cabot Strait, splitting Cape Breton from Newfoundland.
+  [45.7, -59.3],
+  [43.2, -64.8], // Outside Nova Scotia's Atlantic shore — Halifax stays in.
+  [44.5, -70], // Into Maine, and free ground from here west:
+  [41.6, -83], // through Ohio — the dip southern Ontario needs —
+  [47.0, -90],
+  [47.5, -95],
+  [47.5, -124.6], // and a flat run across Minnesota to Washington.
+];
+
+/**
+ * The island of Newfoundland, and this module's one sharp edge in the
+ * northwest Atlantic: St-Pierre-et-Miquelon is France, sits one boat-hop
+ * off the Burin peninsula, and is on nobody's dense list — so the south
+ * coast is traced with real vertices where everything else about this
+ * ring is generous sea. Fortune and Grand Bank stay in; St-Pierre and
+ * Miquelon, three tenths of a degree away, stay out. Labrador rides with
+ * CANADA_MAINLAND.
+ */
+const NEWFOUNDLAND: Ring = [
+  [47.5, -59.5],
+  [50.0, -58.2],
+  [51.8, -56.0], // North tip, spilling toward the Strait of Belle Isle.
+  [49.8, -53.0],
+  [47.6, -52.2], // Avalon's east, out to sea past St John's.
+  [46.4, -53.0],
+  [46.6, -54.3],
+  [46.75, -55.1], // The Burin peninsula's tip — St Lawrence just inside.
+  [47.02, -55.95], // Fortune and Grand Bank in…
+  [47.35, -56.7], // …St-Pierre and Miquelon out. The one edge drawn tight.
+  [47.55, -57.8],
+];
+
+/**
+ * The whole island — the Republic and Northern Ireland both on §4.5.1's
+ * list now, so one lazy box does what GREAT_BRITAIN's careful omission
+ * used to apologise for. It spills into the Celtic and Irish seas and
+ * toward the Scottish isles, all of it sea or dense ground; the Isle of
+ * Man sits just east of it and stays sparse on the strict reading.
+ */
+const IRELAND: Ring = [
+  [51.2, -10.8],
+  [55.6, -10.8],
+  [55.6, -5.3],
+  [51.2, -5.3],
+];
+
+/**
+ * Both main islands and Stewart Island in one box of open ocean. It stops
+ * at 179E: the Chatham Islands live on the far side of the antimeridian,
+ * which no ring here may straddle (see the module header) — a documented
+ * sliver, not a gap. Norfolk Island, north of the box, stays sparse too.
+ */
+const NEW_ZEALAND: Ring = [
+  [-47.6, 166.0],
+  [-34.1, 166.0],
+  [-34.1, 179.0],
+  [-47.6, 179.0],
+];
+
 /** Checked in this order, though the order never matters: any match wins. */
 const DENSE_REGIONS: readonly Ring[] = [
   NORDICS,
   GERMANY,
   GREAT_BRITAIN,
+  IRELAND,
   CONUS,
   ALASKA,
   HAWAII,
+  CANADA_MAINLAND,
+  NEWFOUNDLAND,
   AUSTRALIA,
+  NEW_ZEALAND,
 ];
 
 /**
