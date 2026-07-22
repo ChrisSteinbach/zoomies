@@ -22,6 +22,8 @@ import type { SpotDrawer } from "./spot-drawer";
 import { createMapPicker } from "./map-picker";
 import type { MapPickerHandle } from "./map-picker";
 import { createAttribution } from "./attribution";
+import { renderModeToggle } from "./mode-toggle";
+import { createAboutButton, hideAbout, showAbout } from "./about";
 import { markLoad } from "./load-timeline";
 import { directionsUrl, formatDistance } from "./format";
 import { PlaceProviderError } from "./place-provider";
@@ -156,12 +158,20 @@ export function composeApp(root: HTMLElement, deps: AppDeps = {}): AppHandle {
   const {
     mapElement,
     drawer,
+    topbarElement,
+    modeElement,
     statusElement,
     layersElement,
     listElement,
     pickerElement,
     creditElement,
   } = buildShell(root);
+
+  // The ⓘ is chrome, not state: what it opens changes nothing about position
+  // or results, so — like the drawer's own open and close — it never passes
+  // through the machine.
+  const aboutButton = createAboutButton(() => showAbout(aboutButton));
+  topbarElement.append(aboutButton);
 
   const releaseCredit = reserveRoomForCredit(root, creditElement);
 
@@ -345,6 +355,13 @@ export function composeApp(root: HTMLElement, deps: AppDeps = {}): AppHandle {
     root.dataset.hasResults = String(spots.length > 0);
     if (!position) return;
 
+    // With a position there is a source to show and an alternative to offer;
+    // without one, the status card owns the way into the picker.
+    renderModeToggle(modeElement, state.positionSource, {
+      onFollow: () => dispatch({ kind: "follow-requested" }),
+      onPick: () => dispatch({ kind: "pick-requested" }),
+    });
+
     renderLayerToggle(layersElement, state.bathing, {
       onToggle: () => dispatch({ kind: "bathing-toggled" }),
       onRetry: () => dispatch({ kind: "bathing-retry-requested" }),
@@ -368,6 +385,9 @@ export function composeApp(root: HTMLElement, deps: AppDeps = {}): AppHandle {
     destroy() {
       stopWatching?.();
       picker?.destroy();
+      // The dialog lives on document.body, so clearing `root` cannot take it
+      // down — it has to be asked.
+      hideAbout();
       releaseCredit();
       map.destroy();
       drawer.destroy();
@@ -406,6 +426,10 @@ function reserveRoomForCredit(
 interface Shell {
   mapElement: HTMLElement;
   drawer: SpotDrawer;
+  /** The sheet's top bar; the composition root adds the About button to it. */
+  topbarElement: HTMLElement;
+  /** The top bar's left cell, where the mode toggle renders. */
+  modeElement: HTMLElement;
   statusElement: HTMLElement;
   layersElement: HTMLElement;
   listElement: HTMLElement;
@@ -414,8 +438,13 @@ interface Shell {
 }
 
 /**
- * The app's furniture: a map with the sheet over it, the status above the list
- * inside that sheet, and the attribution outside both.
+ * The app's furniture: a map with the sheet over it; inside that sheet a
+ * sticky header — the top bar, then the status — above the list; and the
+ * attribution outside all of it.
+ *
+ * The top bar and the status share one sticky wrapper because two sticky
+ * siblings would fight for the same top edge, and the status losing that
+ * fight would slide "Updating results…" under the mode toggle.
  *
  * The attribution sits in the shell rather than in any view because it is a
  * licensing obligation that does not lapse in the states that show no map
@@ -436,8 +465,23 @@ function buildShell(root: HTMLElement): Shell {
 
   const drawer = createSpotDrawer(root);
 
+  const headerElement = document.createElement("div");
+  headerElement.className = "app-header";
+
+  const topbarElement = document.createElement("div");
+  topbarElement.className = "app-topbar";
+
+  // The mode toggle's cell. Empty until a position exists — the composition
+  // root only renders the toggle then, since with nothing to follow and
+  // nowhere searched from there is no source to switch between.
+  const modeElement = document.createElement("div");
+  modeElement.className = "app-mode";
+  topbarElement.append(modeElement);
+
   const statusElement = document.createElement("div");
   statusElement.className = "app-status";
+
+  headerElement.append(topbarElement, statusElement);
 
   // Between the status and the list: the layer chips change what the list
   // holds, so they sit where that relationship reads top-to-bottom. Hidden by
@@ -449,7 +493,7 @@ function buildShell(root: HTMLElement): Shell {
   const listElement = document.createElement("div");
   listElement.className = "app-list";
 
-  drawer.element.append(statusElement, layersElement, listElement);
+  drawer.element.append(headerElement, layersElement, listElement);
 
   const creditElement = createAttribution();
 
@@ -462,6 +506,8 @@ function buildShell(root: HTMLElement): Shell {
   return {
     mapElement,
     drawer,
+    topbarElement,
+    modeElement,
     statusElement,
     layersElement,
     listElement,

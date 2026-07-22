@@ -405,6 +405,161 @@ body {
 }
 
 /* ---------------------------------------------------------------------------
+ * Mode toggle (src/app/mode-toggle.ts)
+ *
+ * The segmented GPS ↔ pick control in the sheet's top bar, ported in spirit
+ * from tour-guide. The pressed side is the position source in use, drawn with
+ * the same pressed-green the layer chip uses — pressed means "on" everywhere
+ * in this app. Same 44px floor as every other control.
+ * ------------------------------------------------------------------------ */
+
+.mode-toggle {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  padding: 2px;
+  background: #ececec;
+  border-radius: 0.875rem;
+}
+
+.mode-toggle-btn {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  padding: 0;
+  border: none;
+  border-radius: 0.75rem;
+  background: none;
+  color: #1a6b3c;
+  font-size: 1.25rem;
+  cursor: pointer;
+}
+
+.mode-toggle-btn[aria-pressed="true"] {
+  background: #1a6b3c;
+  color: #fff;
+}
+
+/* The side not in use steps back but stays legibly a button — it is the
+   invitation to switch, not furniture. */
+.mode-toggle-btn[aria-pressed="false"] {
+  opacity: 0.55;
+}
+
+.mode-toggle-btn[aria-pressed="false"]:hover {
+  opacity: 0.85;
+}
+
+/* A resume waiting for its fix: the same lighter green the layer chip shows
+   while it looks, and for the same reason — calm, and legible while it
+   waits. Nothing in this app animates. */
+.mode-toggle-btn[aria-busy="true"] {
+  border-color: #2b8551;
+  background: #2b8551;
+}
+
+.mode-toggle-btn:focus-visible {
+  outline: 3px solid #1a6b3c;
+  outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------------------
+ * About (src/app/about.ts)
+ *
+ * The ⓘ button in the top bar and the native <dialog> it opens. The dialog
+ * carries everything that used to crowd the pinned footer — licence detail,
+ * the invitation to map a missing park, the privacy note — while the footer
+ * keeps only the credit line the licence requires.
+ * ------------------------------------------------------------------------ */
+
+.about-btn {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #1a6b3c;
+  font-size: 1.25rem;
+  cursor: pointer;
+}
+
+.about-btn:focus-visible {
+  outline: 3px solid #1a6b3c;
+  outline-offset: 2px;
+}
+
+.about-dialog {
+  max-width: min(28rem, calc(100vw - 2rem));
+  padding: 1.25rem 1.5rem 1.5rem;
+  border: none;
+  border-radius: 0.75rem;
+  color: #1a1a1a;
+  background: #fff;
+  box-shadow: 0 12px 40px rgb(0 0 0 / 25%);
+}
+
+.about-dialog::backdrop {
+  background: rgb(0 0 0 / 50%);
+}
+
+.about-dialog h2 {
+  /* Room on the right for the close button riding the corner. */
+  margin: 0 2.5rem 0 0;
+  font-size: 1.25rem;
+}
+
+.about-tagline {
+  margin: 0.25rem 0 0;
+  color: #555;
+}
+
+.about-section h3 {
+  margin: 1.25rem 0 0;
+  font-size: 0.9375rem;
+}
+
+.about-section p {
+  margin: 0.375rem 0 0;
+  color: #444;
+  font-size: 0.9375rem;
+  line-height: 1.45;
+}
+
+.about-dialog a {
+  color: #1a6b3c;
+}
+
+/* Anchored to the dialog, which the UA styles as a positioned element. */
+.about-close {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #555;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+
+.about-close:focus-visible {
+  outline: 3px solid #1a6b3c;
+  outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------------------
  * OSM attribution (src/app/attribution.ts)
  *
  * Small and quiet is fine; invisible is a licence breach. ODbL asks for
@@ -468,14 +623,29 @@ body {
   background: #fff;
 }
 
-/* Above the sheet's own content so it stays readable while the list scrolls
- * under it. Local to the sheet's own stacking context, not the shell scale
- * above — it never competes with the picker or the credit bar, so it stays a
- * plain number. */
-.app-status {
+/* The sheet's header: the top bar and the status, pinned together above the
+ * list so both stay readable while it scrolls under them. One sticky group
+ * rather than two sticky siblings, because two would fight for the same top
+ * edge and the later one would slide under the earlier. Local to the sheet's
+ * own stacking context, not the shell scale above — it never competes with
+ * the picker or the credit bar, so it stays a plain number. */
+.app-header {
   position: sticky;
   top: 0;
   z-index: 1;
+  background: #fff;
+}
+
+/* The mode toggle on the left, the About button on the right. The About
+ * button is app furniture and always reachable; the mode cell fills in once
+ * a position exists (compose-app.ts renders it only then). */
+.app-topbar {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.25rem 0.75rem;
+  border-bottom: 1px solid #ececec;
 }
 
 .app-status:empty {

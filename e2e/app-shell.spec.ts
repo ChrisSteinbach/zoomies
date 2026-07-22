@@ -294,6 +294,44 @@ test.describe("with the device's position shared", () => {
     );
   });
 
+  test("the mode toggle swaps to a picked spot and back to the GPS", async ({
+    context,
+    page,
+  }) => {
+    await stubNetwork(context);
+    await page.goto("/");
+    await expect(page.locator(".spot-list-item").first()).toBeVisible();
+
+    // Following the device: the GPS side is pressed, and both clicks below
+    // are hit tests — a sticky header that slid under something would fail
+    // them, which is what makes this a stacking test and not just a flow.
+    await expect(
+      page.getByRole("button", { name: "Following your location" }),
+    ).toHaveAttribute("aria-pressed", "true");
+
+    await page
+      .getByRole("button", { name: "Choose a spot on the map" })
+      .click();
+    await expect(page.locator(".app-picker")).toBeVisible();
+    await page.locator(".map-picker-map").click();
+    await page.getByRole("button", { name: "Use this location" }).click();
+
+    // Now hand-picked: the pin side is pressed and the GPS side offers the
+    // way back.
+    await expect(
+      page.getByRole("button", { name: "Choose a different spot on the map" }),
+    ).toHaveAttribute("aria-pressed", "true");
+
+    await page.getByRole("button", { name: "Follow my location" }).click();
+
+    // The permission is granted, so the resumed watch gets its fix and the
+    // toggle settles back on the GPS side, results still on screen.
+    await expect(
+      page.getByRole("button", { name: "Following your location" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator(".spot-list-item").first()).toBeVisible();
+  });
+
   test("the credit bar stays on top of the results", async ({
     context,
     page,
