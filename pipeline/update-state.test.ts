@@ -285,6 +285,34 @@ const osmiumAvailable = ((): boolean => {
   }
 })();
 
+/**
+ * A tiny per-test URL router for the injected fetch: each test supplies only
+ * the URLs it cares about as a routes table, and anything else 500s — the
+ * same fallback every runUpdate integration test has always relied on to
+ * catch a request it did not expect, just no longer copy-pasted per test.
+ */
+function fakeFetch(
+  routes: Record<string, () => Response>,
+  requests: { url: string; userAgent: string | null }[] = [],
+): typeof fetch {
+  return (input, init) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
+    requests.push({
+      url,
+      userAgent: new Headers(init?.headers).get("user-agent"),
+    });
+    const respond = routes[url];
+    return Promise.resolve(
+      respond ? respond() : new Response(`unexpected: ${url}`, { status: 500 }),
+    );
+  };
+}
+
 describe("runUpdate (integration, needs osmium)", () => {
   it.skipIf(!osmiumAvailable)(
     "repairs a way newly retagged into scope and lands it in the dataset",
@@ -372,40 +400,21 @@ describe("runUpdate (integration, needs osmium)", () => {
         // The fake network: the replication head one sequence ahead of the
         // state, the gzipped diff, and the API's /full answer.
         const requests: { url: string; userAgent: string | null }[] = [];
-        const fetchImpl: typeof fetch = (input, init) => {
-          const url =
-            typeof input === "string"
-              ? input
-              : input instanceof URL
-                ? input.href
-                : input.url;
-          requests.push({
-            url,
-            userAgent: new Headers(init?.headers).get("user-agent"),
-          });
-          if (url === "https://planet.osm.org/replication/day/state.txt") {
-            return Promise.resolve(
+        const fetchImpl = fakeFetch(
+          {
+            "https://planet.osm.org/replication/day/state.txt": () =>
               new Response(
                 "#Fake osmosis state\n" +
                   "sequenceNumber=5062\n" +
                   "timestamp=2026-07-22T00\\:00\\:00Z\n",
               ),
-            );
-          }
-          if (
-            url === "https://planet.osm.org/replication/day/000/005/062.osc.gz"
-          ) {
-            return Promise.resolve(
+            "https://planet.osm.org/replication/day/000/005/062.osc.gz": () =>
               new Response(new Uint8Array(gzipSync(diffXml))),
-            );
-          }
-          if (url === "https://api.openstreetmap.org/api/0.6/way/9001/full") {
-            return Promise.resolve(new Response(fullXml));
-          }
-          return Promise.resolve(
-            new Response(`unexpected: ${url}`, { status: 500 }),
-          );
-        };
+            "https://api.openstreetmap.org/api/0.6/way/9001/full": () =>
+              new Response(fullXml),
+          },
+          requests,
+        );
 
         const summary = await runUpdate({
           statePath: join(tmp, "state.osm.pbf"),
@@ -484,6 +493,200 @@ describe("runUpdate (integration, needs osmium)", () => {
         for (const request of requests) {
           expect(request.userAgent).toBe(USER_AGENT);
         }
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    },
+    30_000,
+  );
+
+  it.skipIf(!osmiumAvailable)(
+    "rebuilds the dataset and rewrites metadata when already at the replication head",
+    async () => {
+      // The module doc's idempotency guarantee: "An already-current state
+      // is not an error: the dataset is still rebuilt" — planDiffSequences
+      // returns [] here, and this pins that runUpdate does not shortcut
+      // past the rebuild or the metadata write when it does.
+      const tmp = mkdtempSync(join(tmpdir(), "zoomies-update-test-"));
+      try {
+        const stateXml = [
+          "<?xml version='1.0' encoding='UTF-8'?>",
+          '<osm version="0.6" generator="update-state-test">',
+          '  <node id="100" version="1" timestamp="2026-07-01T00:00:00Z" lat="59.3293000" lon="18.0686000">',
+          '    <tag k="leisure" v="dog_park"/>',
+          '    <tag k="name" v="Vasaparkens hundrastgård"/>',
+          "  </node>",
+          "</osm>",
+        ].join("\n");
+        writeFileSync(join(tmp, "state.osm"), stateXml);
+        execFileSync("osmium", [
+          "cat",
+          join(tmp, "state.osm"),
+          "-o",
+          join(tmp, "state.osm.pbf"),
+        ]);
+        writeFileSync(
+          join(tmp, "state.json"),
+          JSON.stringify({
+            schema: 1,
+            filterVersion: FILTER_VERSION,
+            sequenceNumber: 5061,
+            timestamp: "2026-07-19T00:00:00.000Z",
+            seededFrom: [
+              { file: "sweden.osm.pbf", timestamp: "2026-07-20T00:00:00Z" },
+            ],
+          }),
+        );
+
+        // The replication head equals the stored sequence — nothing to
+        // replay, so no diff or repair URL is ever requested; the fallback
+        // 500 in fakeFetch is what would catch a regression that fetches
+        // one anyway.
+        const fetchImpl = fakeFetch({
+          "https://planet.osm.org/replication/day/state.txt": () =>
+            new Response(
+              "#Fake osmosis state\n" +
+                "sequenceNumber=5061\n" +
+                "timestamp=2026-07-22T00\\:00\\:00Z\n",
+            ),
+        });
+
+        const summary = await runUpdate({
+          statePath: join(tmp, "state.osm.pbf"),
+          metaPath: join(tmp, "state.json"),
+          outStatePath: join(tmp, "next-state.osm.pbf"),
+          outMetaPath: join(tmp, "next-state.json"),
+          outDatasetPath: join(tmp, "dogspots.json"),
+          fetchImpl,
+          repairPauseMs: 0,
+          region: "integration-test",
+          now: () => new Date("2026-07-22T06:00:00.000Z"),
+        });
+
+        expect(summary.diffsApplied).toBe(0);
+
+        // The dataset is rebuilt from the (unchanged) state, not skipped —
+        // its generatedAt comes from this run's clock, not a stale copy.
+        const dataset = JSON.parse(
+          readFileSync(join(tmp, "dogspots.json"), "utf8"),
+        ) as { generatedAt: string; spots: { id: string }[] };
+        expect(dataset.spots.map((spot) => spot.id)).toEqual(["node/100"]);
+        expect(dataset.generatedAt).toBe("2026-07-22T06:00:00.000Z");
+
+        // The metadata is still rewritten to the replication head that was
+        // checked — an already-current state is re-affirmed, not left alone.
+        const nextMeta = JSON.parse(
+          readFileSync(join(tmp, "next-state.json"), "utf8"),
+        ) as SeedStateMeta;
+        expect(nextMeta.sequenceNumber).toBe(5061);
+        expect(nextMeta.timestamp).toBe("2026-07-22T00:00:00Z");
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    },
+    30_000,
+  );
+
+  it.skipIf(!osmiumAvailable)(
+    "skips a repair target that is gone upstream and completes the run",
+    async () => {
+      // Same retagging hole as the happy-path test above — way 9001 arrives
+      // in the diff without its member nodes 8001-8004 — but this time the
+      // editing API answers /full with 404: the way was deleted between the
+      // diff and now. The repair loop must count that as a skip, not a
+      // fatal error.
+      const tmp = mkdtempSync(join(tmpdir(), "zoomies-update-test-"));
+      try {
+        const stateXml = [
+          "<?xml version='1.0' encoding='UTF-8'?>",
+          '<osm version="0.6" generator="update-state-test">',
+          '  <node id="100" version="1" timestamp="2026-07-01T00:00:00Z" lat="59.3293000" lon="18.0686000">',
+          '    <tag k="leisure" v="dog_park"/>',
+          '    <tag k="name" v="Vasaparkens hundrastgård"/>',
+          "  </node>",
+          "</osm>",
+        ].join("\n");
+        writeFileSync(join(tmp, "state.osm"), stateXml);
+        execFileSync("osmium", [
+          "cat",
+          join(tmp, "state.osm"),
+          "-o",
+          join(tmp, "state.osm.pbf"),
+        ]);
+        writeFileSync(
+          join(tmp, "state.json"),
+          JSON.stringify({
+            schema: 1,
+            filterVersion: FILTER_VERSION,
+            sequenceNumber: 5061,
+            timestamp: "2026-07-19T00:00:00.000Z",
+            seededFrom: [
+              { file: "sweden.osm.pbf", timestamp: "2026-07-20T00:00:00Z" },
+            ],
+          }),
+        );
+
+        const diffXml = [
+          "<?xml version='1.0' encoding='UTF-8'?>",
+          '<osmChange version="0.6" generator="update-state-test">',
+          "  <modify>",
+          '    <way id="9001" version="5" timestamp="2026-07-21T12:00:00Z">',
+          '      <nd ref="8001"/>',
+          '      <nd ref="8002"/>',
+          '      <nd ref="8003"/>',
+          '      <nd ref="8004"/>',
+          '      <nd ref="8001"/>',
+          '      <tag k="leisure" v="dog_park"/>',
+          '      <tag k="name" v="Nya hundrastgården"/>',
+          "    </way>",
+          "  </modify>",
+          "</osmChange>",
+        ].join("\n");
+
+        const fetchImpl = fakeFetch({
+          "https://planet.osm.org/replication/day/state.txt": () =>
+            new Response(
+              "#Fake osmosis state\n" +
+                "sequenceNumber=5062\n" +
+                "timestamp=2026-07-22T00\\:00\\:00Z\n",
+            ),
+          "https://planet.osm.org/replication/day/000/005/062.osc.gz": () =>
+            new Response(new Uint8Array(gzipSync(diffXml))),
+          "https://api.openstreetmap.org/api/0.6/way/9001/full": () =>
+            new Response("Gone", { status: 404 }),
+        });
+
+        const summary = await runUpdate({
+          statePath: join(tmp, "state.osm.pbf"),
+          metaPath: join(tmp, "state.json"),
+          outStatePath: join(tmp, "next-state.osm.pbf"),
+          outMetaPath: join(tmp, "next-state.json"),
+          outDatasetPath: join(tmp, "dogspots.json"),
+          fetchImpl,
+          repairPauseMs: 0,
+          region: "integration-test",
+          now: () => new Date("2026-07-22T06:00:00.000Z"),
+        });
+
+        // The skip is counted, not a fetch, and the run does not throw.
+        expect(summary.repairsSkippedGone).toBe(1);
+        expect(summary.repairsFetched).toBe(0);
+        expect(summary.unresolvedRefs).toBeGreaterThan(0);
+
+        // The unbuildable way is dropped, not fabricated: only the
+        // untouched node makes it into the dataset (--show-errors skips
+        // what osmium export cannot build rather than failing the run).
+        const dataset = JSON.parse(
+          readFileSync(join(tmp, "dogspots.json"), "utf8"),
+        ) as { spots: { id: string }[] };
+        expect(dataset.spots.map((spot) => spot.id)).toEqual(["node/100"]);
+
+        // The commit point still fires: a gone-upstream skip is not a run
+        // failure, so metadata still advances to the head just replayed.
+        const nextMeta = JSON.parse(
+          readFileSync(join(tmp, "next-state.json"), "utf8"),
+        ) as SeedStateMeta;
+        expect(nextMeta.sequenceNumber).toBe(5062);
       } finally {
         rmSync(tmp, { recursive: true, force: true });
       }
