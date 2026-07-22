@@ -393,6 +393,58 @@ describe("when there is no dataset to be had", () => {
     // Guessing at a future format would put unvouched-for pins on the map.
     expect(spots).toEqual([FAELLED_PARK]);
   });
+
+  it("falls back to live when the coverage polygon has no rings", async () => {
+    const live = liveReturning([FAELLED_PARK]);
+    const provider = withOfflineDataset(
+      createDatasetLoader({
+        fetchImpl: respondingWith({
+          ...stockholmDataset(),
+          // An empty include list covers no ground at all: trusting it would
+          // silently turn every query into a live one, a slowdown nobody
+          // would notice, so the whole file is refused instead.
+          coverage: { include: [], exclude: [] },
+        }),
+        store: fakeStore(),
+      }),
+      live,
+    );
+
+    const spots = await provider.findDogParks(59.33, 18.06, 3_000);
+
+    expect(spots).toEqual([FAELLED_PARK]);
+  });
+
+  it("falls back to live when a coverage ring has a non-numeric point", async () => {
+    const live = liveReturning([FAELLED_PARK]);
+    const provider = withOfflineDataset(
+      createDatasetLoader({
+        fetchImpl: respondingWith({
+          ...stockholmDataset(),
+          coverage: {
+            // The Sweden square's last corner replaced by a string pair: a
+            // ring this corrupt might cover ground the extract never
+            // reached, so the geometry cannot be trusted as a whole.
+            include: [
+              [
+                [58.9, 17.5],
+                [58.9, 18.7],
+                [59.7, 18.7],
+                ["north", "west"],
+              ],
+            ],
+            exclude: [],
+          },
+        }),
+        store: fakeStore(),
+      }),
+      live,
+    );
+
+    const spots = await provider.findDogParks(59.33, 18.06, 3_000);
+
+    expect(spots).toEqual([FAELLED_PARK]);
+  });
 });
 
 describe("validating what arrived", () => {
