@@ -230,7 +230,7 @@ Guidance:
    max radius (~25 km) is reached.
 3. Display results as a distance-sorted list and as map pins; each
    result shows name (or "Unnamed dog park"), distance, and tags of
-   interest if present (fenced, lit, surface).
+   interest if present (leash status, fenced, lit, surface).
 4. Tapping a result offers "open in maps" navigation deep-link.
 5. Show OSM attribution.
 6. Errors (Overpass down/timeout) fail visibly and politely; offer

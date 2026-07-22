@@ -462,6 +462,8 @@ function toSpot(value: unknown): DogSpot | null {
  */
 function toStoredTags(value: Record<string, unknown>): SpotTags {
   const tags: SpotTags = {};
+  if (typeof value.leashRequired === "boolean")
+    tags.leashRequired = value.leashRequired;
   if (typeof value.fenced === "boolean") tags.fenced = value.fenced;
   if (typeof value.lit === "boolean") tags.lit = value.lit;
   if (typeof value.surface === "string") tags.surface = value.surface;

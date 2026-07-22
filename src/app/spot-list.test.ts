@@ -202,6 +202,31 @@ describe("describeTags", () => {
     expect(describeTags({ lit: true })).toEqual(["Lit"]);
   });
 
+  it("says leash required when a lead is mandatory", () => {
+    expect(describeTags({ leashRequired: true })).toEqual(["Leash required"]);
+  });
+
+  it("says off-leash OK when a lead is not required, a surveyed statement rather than silence", () => {
+    // Present-and-false is the same principle as "Not fenced": someone
+    // surveyed it and wrote down "no", so it is shown rather than dropped.
+    expect(describeTags({ leashRequired: false })).toEqual(["Off-leash OK"]);
+  });
+
+  it("says nothing about leashing when OSM does not", () => {
+    expect(describeTags({})).toEqual([]);
+  });
+
+  it("lists leash status, fenced, lit and surface in that order", () => {
+    expect(
+      describeTags({
+        surface: "grass",
+        lit: false,
+        fenced: true,
+        leashRequired: true,
+      }),
+    ).toEqual(["Leash required", "Fenced", "Not lit", "Surface: grass"]);
+  });
+
   it("lists fenced, lit and surface in that order", () => {
     expect(
       describeTags({ surface: "grass", lit: false, fenced: true }),

@@ -496,6 +496,52 @@ describe("validating what arrived", () => {
     expect(spots[0].seasonal).toBeUndefined();
     expect(spots).toEqual([NEARBY_BATHING]);
   });
+
+  it("keeps a spot's leash flag when it reads as a genuine boolean", async () => {
+    const provider = withOfflineDataset(
+      createDatasetLoader({
+        fetchImpl: respondingWith({
+          ...stockholmDataset(),
+          spots: [
+            {
+              ...NEARBY_PARK,
+              tags: { ...NEARBY_PARK.tags, leashRequired: true },
+            },
+          ],
+        }),
+        store: fakeStore(),
+      }),
+      liveNeverAsked(),
+    );
+
+    const spots = await provider.findDogParks(59.33, 18.06, 3_000);
+
+    expect(spots[0].tags.leashRequired).toBe(true);
+  });
+
+  it("drops a leash flag that is not really a boolean, keeping the rest of the spot", async () => {
+    const provider = withOfflineDataset(
+      createDatasetLoader({
+        fetchImpl: respondingWith({
+          ...stockholmDataset(),
+          spots: [
+            {
+              ...NEARBY_PARK,
+              tags: { ...NEARBY_PARK.tags, leashRequired: "yes" },
+            },
+          ],
+        }),
+        store: fakeStore(),
+      }),
+      liveNeverAsked(),
+    );
+
+    const spots = await provider.findDogParks(59.33, 18.06, 3_000);
+
+    // A string is not a survey answer this app can trust: absence, never a
+    // guess (types.ts) — but the spot itself, and its other tags, survive.
+    expect(spots).toEqual([NEARBY_PARK]);
+  });
 });
 
 describe("the stored copy", () => {

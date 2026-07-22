@@ -107,6 +107,22 @@ describe("what counts as a bathing candidate", () => {
  * the matrix belongs here rather than in either caller's tests.
  */
 describe("translating OSM tags into display tags", () => {
+  it("says a lead is required when the feature is tagged dog=leashed", () => {
+    expect(toSpotTags({ dog: "leashed" }).leashRequired).toBe(true);
+  });
+
+  it("says off-leash is fine when the feature is tagged dog=unleashed", () => {
+    expect(toSpotTags({ dog: "unleashed" }).leashRequired).toBe(false);
+  });
+
+  it("says nothing about leashing for dog=designated, an access value not a leash one", () => {
+    expect(toSpotTags({ dog: "designated" }).leashRequired).toBeUndefined();
+  });
+
+  it("says nothing about leashing when there is no dog tag at all", () => {
+    expect(toSpotTags({}).leashRequired).toBeUndefined();
+  });
+
   it("says fenced when the feature is tagged fenced=yes", () => {
     expect(toSpotTags({ fenced: "yes" }).fenced).toBe(true);
   });
