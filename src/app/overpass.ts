@@ -1,21 +1,28 @@
-import { parseDogConditional } from "./dog-conditional";
+import {
+  BATHING_FEATURE_TAGS,
+  DOG_ALLOWED_VALUES,
+  DOG_PARK_TAG,
+  HUNDBAD_NAME_SUBSTRING,
+  NAMED_FEATURE_FAMILIES,
+  asBathingSpot,
+  asDogPark,
+  toSpotTags,
+} from "./osm-tags";
+import type { SpotSkeleton } from "./osm-tags";
 import { PlaceProviderError } from "./place-provider";
 import type { PlaceProvider } from "./place-provider";
-import type {
-  DogSpot,
-  LatLon,
-  Provenance,
-  SeasonalRule,
-  SpotTags,
-} from "./types";
+import type { DogSpot, LatLon } from "./types";
 
 /**
  * The MVP's data source: the public Overpass API (docs/spec.md §5, Option A).
  *
  * Every Overpass-shaped idea — the query language, `elements`, node/way/
- * relation, the `tags` bag, HTTP status codes — is confined to this file.
- * What leaves it is {@link DogSpot} and {@link PlaceProviderError}, so the
- * phase-4 offline provider can take its place without the UI noticing.
+ * relation, HTTP status codes — is confined to this file. What the layers
+ * *mean* is not here: the tag vocabulary and the tags→spot translation live
+ * in osm-tags.ts, shared with the offline dataset pipeline, so the two
+ * sources cannot drift apart. What leaves is {@link DogSpot} and
+ * {@link PlaceProviderError}, so the offline provider can take this file's
+ * place without the UI noticing.
  */
 
 /** The main public instance. Free, shared, and fair-use limited (spec §5). */
@@ -92,68 +99,48 @@ export function createOverpassProvider(
  * than the full geometry of an area.
  */
 function buildDogParkQuery(lat: number, lon: number, radiusM: number): string {
+  const park = `nwr["${DOG_PARK_TAG.key}"="${DOG_PARK_TAG.value}"]`;
   return [
     `[out:json][timeout:${OVERPASS_SERVER_TIMEOUT_S}];`,
-    `nwr["leisure"="dog_park"](around:${around(lat, lon, radiusM)});`,
+    `${park}(around:${around(lat, lon, radiusM)});`,
     "out center;",
   ].join("\n");
 }
 
 /**
- * The tag families the name-regex fallback is allowed to search.
- *
- * Not in the spec's version of the query, and load-bearing: a bare
- * `nwr["name"~"hundbad",i]` runs the regex over every named object in the
- * disc — every street, shop and bus stop — and, measured on 2026-07-21, that
- * times out inside the query's own 25-second budget at the 25 km radius
- * around central Stockholm (the server gave up at 31 s). Since the widest
- * ring is exactly where a thin layer ends up, the unbounded clause would turn
- * "no bathing spots within 25 km" into a permanent error in the one city the
- * spec requires to work (§2.1).
- *
- * Requiring an indexed tag family first keeps the regex to feature-shaped
- * objects. The cost of the bound: a hundbad whose element carries a name and
- * none of these families is out of reach — and such an element would also
- * give us nothing to render or grade, so the recall given up is places the
- * app could only have pointed at, not described.
- */
-const NAMED_FEATURE_FAMILIES = [
-  "natural",
-  "leisure",
-  "amenity",
-  "man_made",
-  "place",
-] as const;
-
-/**
  * The bathing-spot query: the union of docs/spec.md §4.3, because there is no
  * single primary tag for a hundbad.
  *
- * The first three clauses are the tagged patterns — a bathing place, a beach
- * or a swimming area that says something about dogs. The rest are the
- * Sweden-specific fallback, the case-insensitive name regex bounded to the
- * {@link NAMED_FEATURE_FAMILIES}: many hundbad are mapped as generic features
- * with "hundbad" in the name and no `dog=*` tag at all, so without the
- * fallback Swedish coverage is close to useless — which is the one thing this
- * app cannot afford (§2.1). It also finds false positives, which is why what
- * it finds is labelled `name-match` rather than presented as a fact about
- * dogs.
+ * Every clause is derived from the shared vocabulary in osm-tags.ts — the
+ * tagged patterns from {@link BATHING_FEATURE_TAGS} and
+ * {@link DOG_ALLOWED_VALUES}, the Sweden-specific name fallback from
+ * {@link HUNDBAD_NAME_SUBSTRING} bounded to the
+ * {@link NAMED_FEATURE_FAMILIES} — so this query and the offline converter's
+ * predicates are two spellings of one rule. The fallback matters because many
+ * hundbad are mapped as generic features with "hundbad" in the name and no
+ * `dog=*` tag at all; without it Swedish coverage is close to useless, which
+ * is the one thing this app cannot afford (§2.1). It also finds false
+ * positives, which is why what it finds is labelled `name-match` rather than
+ * presented as a fact about dogs.
  *
  * A feature can satisfy several clauses at once; deduplication is
  * {@link toSpots}'s job.
  */
 function buildBathingQuery(lat: number, lon: number, radiusM: number): string {
   const near = around(lat, lon, radiusM);
-  const allowsDogs = '["dog"~"^(yes|designated)$"]';
+  const allowsDogs = `["dog"~"^(${DOG_ALLOWED_VALUES.join("|")})$"]`;
+  const taggedBathing = BATHING_FEATURE_TAGS.map(
+    ({ key, value }) =>
+      `  nwr["${key}"="${value}"]${allowsDogs}(around:${near});`,
+  );
   const namedHundbad = NAMED_FEATURE_FAMILIES.map(
-    (family) => `  nwr["${family}"]["name"~"hundbad",i](around:${near});`,
+    (family) =>
+      `  nwr["${family}"]["name"~"${HUNDBAD_NAME_SUBSTRING}",i](around:${near});`,
   );
   return [
     `[out:json][timeout:${OVERPASS_SERVER_TIMEOUT_S}];`,
     "(",
-    `  nwr["leisure"="bathing_place"]${allowsDogs}(around:${near});`,
-    `  nwr["natural"="beach"]${allowsDogs}(around:${near});`,
-    `  nwr["leisure"="swimming_area"]${allowsDogs}(around:${near});`,
+    ...taggedBathing,
     ...namedHundbad,
     ");",
     "out center;",
@@ -360,7 +347,7 @@ function toSpots(
 /** What every feature translates to, before anything kind-specific. */
 interface CommonSpot {
   /** The fields shared by both layers: identity, name, position, tags. */
-  spot: Omit<DogSpot, "kind" | "provenance" | "seasonal">;
+  spot: SpotSkeleton;
   /** The element's raw OSM tags, for the decisions that differ by kind. */
   tags: Record<string, unknown>;
 }
@@ -400,84 +387,16 @@ function toCommonSpot(element: unknown): CommonSpot | undefined {
   };
 }
 
+/** A dog-park element as a spot. The claim itself is {@link asDogPark}'s. */
 function toDogPark(element: unknown): DogSpot | undefined {
   const common = toCommonSpot(element);
-  if (!common) return undefined;
-
-  return {
-    ...common.spot,
-    kind: "dog_park",
-    // Everything here matched `leisure=dog_park`, which *is* the statement
-    // that the place is for dogs.
-    provenance: "designated",
-    // No `seasonal`, deliberately: `dog:conditional` describes a beach ban
-    // season, and a dog park is not seasonally closed to dogs. Reading the
-    // tag here would invent a caveat the park layer has no business making.
-  };
+  return common && asDogPark(common.spot);
 }
 
+/** A bathing element as a spot, graded — or dropped — by its own tags. */
 function toBathingSpot(element: unknown): DogSpot | undefined {
   const common = toCommonSpot(element);
-  if (!common) return undefined;
-
-  const provenance = bathingProvenance(common.tags);
-  if (!provenance) return undefined;
-
-  const seasonal = seasonalRule(common.tags);
-
-  return {
-    ...common.spot,
-    kind: "bathing_spot",
-    provenance,
-    ...(seasonal ? { seasonal } : {}),
-  };
-}
-
-/**
- * How strong a claim this feature makes about dogs — or nothing at all, when
- * it says dogs are not welcome, in which case the caller drops it.
- *
- * Read from the element's own tags rather than from which union clause
- * matched, because Overpass does not say which one did.
- *
- * `dog=no` is the exclusion that matters: such a feature can only have
- * reached us through the name regex, and a beach called "Hundbadet" that has
- * since been tagged as banning dogs is precisely the confidently wrong pin
- * the spec forbids (§3). Dropping it costs a result; showing it costs someone
- * a wasted trip, or a fine.
- */
-function bathingProvenance(
-  tags: Record<string, unknown>,
-): Provenance | undefined {
-  const dog = tags.dog;
-
-  // Specifically intended for dogs: a dog beach (§4.3).
-  if (dog === "designated") return "designated";
-  // Dogs are allowed, though the place is not for them. `leashed` and
-  // `unleashed` can only arrive through the name clause — the tagged clauses
-  // match `yes|designated` alone — but they still say dogs belong here.
-  if (dog === "yes" || dog === "leashed" || dog === "unleashed") {
-    return "permitted";
-  }
-  if (dog === "no") return undefined;
-
-  // No `dog` tag, or a value nobody has thought about: the word in the name
-  // is the only reason this feature is in the answer, and the UI must say so.
-  return "name-match";
-}
-
-/**
- * The seasonal ban OSM records for this feature, when it records one.
- *
- * Absent `dog:conditional` leaves the field off entirely rather than
- * asserting "no restriction" — the UI's verify-signage caveat is what covers
- * that case (§4.5.3), and a value this app cannot read still comes back as
- * `unparsed` so the caveat sharpens rather than disappears.
- */
-function seasonalRule(tags: Record<string, unknown>): SeasonalRule | undefined {
-  const conditional = tags["dog:conditional"];
-  if (typeof conditional !== "string" || conditional === "") return undefined;
-  return parseDogConditional(conditional);
+  return common && asBathingSpot(common.spot, common.tags);
 }
 
 /**
@@ -499,60 +418,6 @@ function toPoint(lat: unknown, lon: unknown): LatLon | undefined {
   if (typeof lat !== "number" || !Number.isFinite(lat)) return undefined;
   if (typeof lon !== "number" || !Number.isFinite(lon)) return undefined;
   return { lat, lon };
-}
-
-/**
- * The OSM tags worth showing, translated.
- *
- * A field is set only when OSM actually says something. Absent means unknown,
- * and must never be flattened into "no" (see {@link SpotTags}).
- */
-function toSpotTags(tags: Record<string, unknown>): SpotTags {
-  const spotTags: SpotTags = {};
-
-  const fenced = readFenced(tags);
-  if (fenced !== undefined) spotTags.fenced = fenced;
-
-  const lit = readLit(tags);
-  if (lit !== undefined) spotTags.lit = lit;
-
-  // Passed through verbatim: OSM's surface vocabulary is open, and an enum
-  // here would silently drop values we have not thought of.
-  const surface = tags.surface;
-  if (typeof surface === "string" && surface !== "") spotTags.surface = surface;
-
-  return spotTags;
-}
-
-/**
- * Whether the park is enclosed.
- *
- * Mappers express this two ways: `fenced=yes|no` on the park, or
- * `barrier=fence` on its outline. `fenced` wins where both appear, being the
- * direct statement about the park rather than about one of its edges.
- * Anything else — `fenced=partial`, `barrier=hedge`, a bare `fence_type` —
- * leaves the answer unknown.
- */
-function readFenced(tags: Record<string, unknown>): boolean | undefined {
-  if (tags.fenced === "yes") return true;
-  if (tags.fenced === "no") return false;
-  if (tags.barrier === "fence") return true;
-  if (tags.barrier === "no") return false;
-  return undefined;
-}
-
-/**
- * Whether the park is lit after dark — in a Swedish winter, the difference
- * between usable and not.
- *
- * `lit` is not a boolean tag: `lit=24/7`, `lit=sunset-sunrise` and
- * `lit=limited` are all in use and all mean there are lamps. Only `lit=no`
- * denies it, so every other value is read as lit.
- */
-function readLit(tags: Record<string, unknown>): boolean | undefined {
-  const lit = tags.lit;
-  if (typeof lit !== "string" || lit === "") return undefined;
-  return lit !== "no";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -1,0 +1,156 @@
+name: Refresh dataset
+
+# The daily half of the offline data path (docs/spec.md §5): advance the
+# globally filtered OSM state by whatever planet daily replication diffs
+# are pending, rebuild the planet dataset behind its sanity gates, and
+# publish one JSON file where the app already looks (offline-dataset.ts):
+#
+#   https://raw.githubusercontent.com/ChrisSteinbach/zoomies/dataset/dogspots.json
+#
+# The branch name and the filename are load-bearing halves of that URL —
+# do not vary either. The state that carries from run to run — the
+# filtered planet state.osm.pbf and its replication metadata state.json —
+# lives as assets on the `data-state` release: releases are repo-global,
+# and the default GITHUB_TOKEN can download and re-upload their assets
+# under this job's `contents: write`. Every step here must fail the job
+# when it fails: a dead cron that publishes nothing is how offline data
+# silently ages, and a red Actions tab is the only place that decay
+# becomes visible.
+on:
+  schedule:
+    # Daily at 03:30 UTC. The diff covering the previous UTC day publishes
+    # shortly after 00:00 UTC; 03:30 leaves slack for a late one without
+    # drifting into the next day's.
+    - cron: "30 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# The group is SHARED with reseed.yml on purpose: a refresh and a reseed
+# force-push the same dataset branch and clobber the same release assets,
+# so the two must never run concurrently. No cancel-in-progress —
+# whichever is running finishes, the other waits its turn.
+concurrency:
+  group: refresh-dataset
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install osmium
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y osmium-tool
+
+      # This job can only ADVANCE a state, never conjure one: it is seeded
+      # by the "Reseed state" workflow (reseed.yml), or locally with
+      # pipeline/seed-state.ts followed by
+      # `gh release create data-state state.osm.pbf state.json`. A missing
+      # release or asset therefore fails with that instruction rather than
+      # a bare gh error.
+      - name: Download the state from the data-state release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p /tmp/state
+          if ! gh release download data-state \
+            --pattern state.osm.pbf --pattern state.json --dir /tmp/state ||
+            [ ! -s /tmp/state/state.osm.pbf ] ||
+            [ ! -s /tmp/state/state.json ]; then
+            {
+              echo "Could not fetch state.osm.pbf and state.json from the data-state release."
+              echo "The state must first be seeded: run the 'Reseed state' workflow, or seed"
+              echo "locally with pipeline/seed-state.ts and publish the pair once with"
+              echo "  gh release create data-state state.osm.pbf state.json"
+            } >&2
+            exit 1
+          fi
+
+      # update-state.ts applies every pending daily diff (oldest first),
+      # re-filters, repairs the geometry the diffs cannot carry via the OSM
+      # editing API, and rebuilds the dataset behind assertDatasetSane. If
+      # replication is incoherent, the backlog exceeds the diff budget, or
+      # the converter regressed, it exits non-zero and nothing below
+      # publishes.
+      - name: Apply pending diffs and rebuild the dataset
+        run: |
+          mkdir -p /tmp/out
+          npx tsx pipeline/update-state.ts \
+            --state /tmp/state/state.osm.pbf \
+            --meta /tmp/state/state.json \
+            --out-state /tmp/out/state.osm.pbf \
+            --out-meta /tmp/out/state.json \
+            --out-dataset /tmp/out/dogspots.json
+
+      # The dataset branch is a publish target like gh-pages, not history:
+      # exactly one orphan commit holding the file and a README, force-
+      # pushed each day. The README exists because ODbL makes this file a
+      # derived database (spec §4.1) — attribution and share-alike must
+      # travel with it, readable by someone who finds the branch cold.
+      # KEEP IN SYNC with the identical step in reseed.yml — duplication
+      # was chosen over a composite action so each workflow reads whole.
+      - name: Publish to the dataset branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          generated="$(date -u +%Y-%m-%d)"
+          publish="$(mktemp -d)"
+          cp /tmp/out/dogspots.json "$publish/dogspots.json"
+          cat > "$publish/README.md" <<EOF
+          # Zoomies offline dataset
+
+          **dogspots.json** holds every dog park and dog bathing spot in
+          OpenStreetMap, planet-wide, pre-converted into the format the
+          [zoomies](https://github.com/ChrisSteinbach/zoomies) app reads. The
+          app fetches it from this branch's raw URL to answer nearby-spots
+          queries without a live Overpass round-trip.
+
+          The file is seeded from Geofabrik region extracts and then kept
+          current by replaying planet.osm.org daily replication diffs, with
+          geometry the diffs cannot carry repaired via the OSM editing API.
+
+          - Region: planet
+          - Generated: ${generated}
+
+          The data is © OpenStreetMap contributors. This file is a derived
+          database of OpenStreetMap and is published under the
+          [Open Database License (ODbL) 1.0](https://opendatacommons.org/licenses/odbl/1-0/);
+          share-alike applies to anything derived from it in turn.
+
+          This branch is a publish target, not history: each daily refresh
+          force-pushes a single orphan commit. The pipeline that generates
+          the file lives in the
+          [zoomies repository](https://github.com/ChrisSteinbach/zoomies).
+          EOF
+          cd "$publish"
+          git init --quiet --initial-branch=dataset
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dogspots.json README.md
+          git commit --quiet -m "Refresh dataset: planet, ${generated}"
+          git push --quiet --force \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            dataset:refs/heads/dataset
+
+      # Ordering matters: the dataset branch is published FIRST and the
+      # state uploaded SECOND. If this upload fails after a good publish,
+      # the release still holds yesterday's state, and the next run simply
+      # replays one extra day of diffs onto it — the idempotent replay
+      # (newer object versions win) the update engine is built around.
+      # Nothing is lost but a retry.
+      - name: Upload the updated state to the data-state release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload data-state /tmp/out/state.osm.pbf /tmp/out/state.json --clobber

@@ -31,7 +31,7 @@ jobs:
       # The individual linters run separately from `npm run lint` so a failure
       # names the tool that failed instead of the whole chain.
       - name: Lint JS/TS
-        run: npx eslint src/
+        run: npx eslint src/ pipeline/
 
       - name: Lint CSS
         run: npx stylelint "src/**/*.css"

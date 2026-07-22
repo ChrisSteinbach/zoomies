@@ -20,6 +20,10 @@ npm run format:fix    # Prettier auto-fix only
 npm run dev           # Start Vite dev server (binds 0.0.0.0 for phone testing)
 npm run build         # Production build → dist/
 npm run preview       # Serve the production build locally
+npm run data:build    # Cut a regional dataset from one Geofabrik extract
+                      #   (-- --pbf … --poly … --out …; needs osmium-tool)
+npm run data:seed     # Seed the global state (filter-one per region, then merge)
+npm run data:update   # Advance the state by daily diffs and rebuild the dataset
 ```
 
 Run a single test file: `npx vitest run src/app/geo.test.ts`
@@ -46,17 +50,26 @@ All place data goes through one interface:
 findDogParks(lat, lon, radiusM): Promise<DogSpot[]>
 ```
 
-The MVP implements it against the live Overpass API. A phase-4 offline
-provider (Geofabrik + osmium extract) must drop in behind the same interface
-without touching the UI, so:
+Two implementations sit behind it. The offline dataset
+(`offline-dataset.ts` — planet-wide, seeded from Geofabrik extracts and
+advanced daily by `pipeline/` replaying OSM replication diffs) answers when
+the query circle lies wholly inside its coverage polygon; the live Overpass
+client answers everything else. For that to stay true:
 
 - **No Overpass-shaped types may cross the seam.** No `elements`, no `tags`
   bags, no `type: "node" | "way"`, no Overpass ids leaking as identity. The
   provider translates Overpass JSON into `DogSpot` and nothing else escapes.
+- **What the layers mean lives once, in `src/app/osm-tags.ts`** — which tags
+  make a dog park, a bathing candidate, a provenance claim. The live query
+  builder and the pipeline's converter both derive from it; change layer
+  semantics there and nowhere else, or the two sources drift.
 - Callers get domain types and domain errors. "Overpass timed out" is a
   provider detail; the UI sees a generic, retryable failure.
 - Anything Overpass-specific (query building, response parsing, the expanding
   radius retry) belongs behind the provider, not in UI or state code.
+- The pipeline's converter tests are fixture-only — no osmium binary, no
+  network — and run in the normal vitest suite. Only the scheduled data
+  workflow runs real osmium.
 
 Distances use the plain haversine in `src/app/geo.ts`. The global dog dataset
 is a few thousand objects, so a linear scan is simpler and faster than any
