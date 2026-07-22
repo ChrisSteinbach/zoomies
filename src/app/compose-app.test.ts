@@ -500,6 +500,16 @@ describe("shutting down", () => {
     expect(gps.stop).toHaveBeenCalled();
     expect(root.children).toHaveLength(0);
   });
+
+  it("closes the picker if it is still open", () => {
+    const { app, root, gps, picker } = mount();
+
+    gps.fail("PERMISSION_DENIED");
+    root.querySelector<HTMLButtonElement>(".status-action-primary")!.click();
+    app.destroy();
+
+    expect(picker.destroy).toHaveBeenCalled();
+  });
 });
 
 describe("the load timeline", () => {
