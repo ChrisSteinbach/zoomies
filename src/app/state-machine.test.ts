@@ -176,7 +176,26 @@ describe("picking a position by hand", () => {
       staleSpots: [TANTO, DRAKEN],
     });
     expect(state.positionSource).toBe("gps");
-    expect(effects).toEqual([{ kind: "search", position: A_WALK_AWAY }]);
+    // The map goes to the fix: resuming is a deliberate return to the
+    // device, not the passive walking that leaves the viewport alone.
+    expect(effects).toEqual([
+      { kind: "frame-map", position: A_WALK_AWAY },
+      { kind: "search", position: A_WALK_AWAY },
+    ]);
+  });
+
+  it("points the map at the spot the user picked", () => {
+    const { effects } = run([
+      ...showingResults,
+      { kind: "position-picked", position: A_WALK_AWAY },
+    ]);
+
+    // Before the search is even answered — the choice is the thing to look
+    // at, not the old neighbourhood's pins.
+    expect(effects).toContainEqual({
+      kind: "frame-map",
+      position: A_WALK_AWAY,
+    });
   });
 
   it("keeps the picked results when the resumed fix lands a few steps away", () => {
@@ -665,6 +684,7 @@ describe("the bathing layer", () => {
 
     expect(state.bathing).toEqual({ kind: "loading", staleSpots: [HUNDBADET] });
     expect(effects).toEqual([
+      { kind: "frame-map", position: A_WALK_AWAY },
       { kind: "search", position: A_WALK_AWAY },
       { kind: "search-bathing", position: A_WALK_AWAY },
     ]);

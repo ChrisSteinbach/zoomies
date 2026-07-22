@@ -175,6 +175,16 @@ export interface SpotMapHandle {
    * you-are-here marker.
    */
   render(spots: DogSpot[], position: LatLon, selectedId: string | null): void;
+  /**
+   * Point the viewport at a new search origin.
+   *
+   * The one sanctioned exception to "the viewport belongs to the user"
+   * (see {@link frameOnce}): the user has just said "look there" — picked a
+   * spot, or asked to follow the device again from somewhere else — and
+   * centring on it is the looking. Ordinary movement must never come
+   * through here.
+   */
+  frame(position: LatLon): void;
   /** Tears the map down and gives the container back as it was found. Safe to
    *  call more than once. */
   destroy(): void;
@@ -365,7 +375,9 @@ export function createSpotMap(
    *
    * Every later render leaves the viewport exactly where it is. A GPS tick
    * arrives every second or so, and re-centring on each one would drag the map
-   * out from under a user who had panned somewhere to look at it.
+   * out from under a user who had panned somewhere to look at it. The one way
+   * to move it again is {@link SpotMapHandle.frame}, which only a deliberate
+   * reposition reaches.
    */
   function frameOnce(spots: DogSpot[], position: LatLon): void {
     if (framed) return;
@@ -423,6 +435,15 @@ export function createSpotMap(
 
       applySelection(selectedId);
       frameOnce(spots, position);
+    },
+
+    frame(position) {
+      if (destroyed) return;
+
+      map.setView([position.lat, position.lon], NEARBY_ZOOM);
+      // The frame is spent: from here the viewport belongs to the user again,
+      // exactly as after frameOnce.
+      framed = true;
     },
 
     destroy() {
