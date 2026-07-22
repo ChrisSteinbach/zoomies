@@ -275,6 +275,74 @@ describe("renderStatus, having found nothing", () => {
     expect(buttonLabels(container)).toEqual(["Search somewhere else"]);
     expect(handlers.onPickPosition).toHaveBeenCalled();
   });
+
+  // The split below is docs/spec.md §4.5.1 reaching the user: Slussen sits in
+  // OSM's well-mapped Nordic ground, where an empty answer is fair evidence
+  // of absence; Montmartre does not, and the card must not let the map speak
+  // for the ground there.
+
+  const MONTMARTRE = { lat: 48.8867, lon: 2.3431 };
+
+  it("claims only what it can stand behind where mapping is thin: none *mapped*", () => {
+    const container = mount();
+    const phase: Phase = {
+      kind: "empty",
+      position: MONTMARTRE,
+      searchedRadiusM: 25_000,
+    };
+
+    renderStatus(container, phase, callbacks());
+
+    expect(words(container)).toContain("No dog parks mapped within 25 km");
+    expect(words(container)).toContain(
+      "says more about the map than the ground",
+    );
+  });
+
+  it("does not water down a well-mapped region's empty answer with the thin-mapping caveat", () => {
+    const container = mount();
+    const phase: Phase = {
+      kind: "empty",
+      position: SLUSSEN,
+      searchedRadiusM: 25_000,
+    };
+
+    renderStatus(container, phase, callbacks());
+
+    expect(words(container)).toContain("No dog parks within 25 km");
+    expect(words(container)).not.toContain("says more about the map");
+  });
+
+  it("offers thin-mapped emptiness the same single move: search elsewhere", () => {
+    const container = mount();
+    const phase: Phase = {
+      kind: "empty",
+      position: MONTMARTRE,
+      searchedRadiusM: 25_000,
+    };
+
+    renderStatus(container, phase, callbacks());
+
+    expect(buttonLabels(container)).toEqual(["Search somewhere else"]);
+  });
+
+  it("rewrites the card when a picked position moves the emptiness from thin to well-mapped ground", () => {
+    const container = mount();
+
+    renderStatus(
+      container,
+      { kind: "empty", position: MONTMARTRE, searchedRadiusM: 25_000 },
+      callbacks(),
+    );
+    renderStatus(
+      container,
+      { kind: "empty", position: SLUSSEN, searchedRadiusM: 25_000 },
+      callbacks(),
+    );
+
+    expect(words(container)).toContain("No dog parks within 25 km");
+    expect(words(container)).not.toContain("mapped within");
+  });
 });
 
 describe("renderStatus, after a failed lookup", () => {

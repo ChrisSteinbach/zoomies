@@ -17,7 +17,9 @@
 import type { Phase } from "./state-machine";
 import type { LocationErrorCode } from "./location";
 import type { PlaceProviderError } from "./place-provider";
+import type { LatLon } from "./types";
 import { formatDistance } from "./format";
+import { mappingDensityAt } from "./mapping-density";
 
 export interface StatusCallbacks {
   /** Run the failed lookup again, from the position we already have. */
@@ -188,7 +190,7 @@ function describeStatus(phase: Phase): StatusContent | null {
       return needsPosition(phase.reason);
 
     case "empty":
-      return empty(phase.searchedRadiusM);
+      return empty(phase.searchedRadiusM, phase.position);
 
     case "failed":
       return failed(
@@ -267,18 +269,42 @@ function needsPosition(reason: LocationErrorCode): StatusContent {
  * §3) — so it apologises for nothing, blames nothing, and says plainly how far
  * it looked. The radius comes from the phase because "nothing within 3 km" and
  * "nothing within 25 km" are different statements.
+ *
+ * How much the answer *means* depends on where it was asked (docs/spec.md
+ * §4.5.1, encoded in mapping-density.ts). Where OSM's dog-park layer is dense,
+ * an empty answer is fair evidence of absence, and the mild hedge stands.
+ * Everywhere else the honest reading is that the *map* is probably what's
+ * empty — so the title gains the word "mapped", carrying the claim the app
+ * can actually stand behind, and the detail says which of the two silences
+ * this one likely is. Same two variants of one card, not a warning banner:
+ * nothing is broken, and dressing honesty up as an error would teach users
+ * to dismiss it.
  */
-function empty(searchedRadiusM: number): StatusContent {
-  return {
-    presence: "takeover",
-    signature: `empty:${searchedRadiusM}`,
-    status: "empty",
-    title: `No dog parks within ${formatDistance(searchedRadiusM)}`,
-    detail:
-      "OpenStreetMap has none mapped around here. Its coverage is uneven, so there may be a park that nobody has added yet.",
+function empty(searchedRadiusM: number, position: LatLon): StatusContent {
+  const density = mappingDensityAt(position);
+  const base = {
+    presence: "takeover" as const,
+    signature: `empty:${density}:${searchedRadiusM}`,
+    status: "empty" as const,
     // No retry: the same search would return the same nothing. Looking from
     // somewhere else is the only move that changes the answer.
     actions: [pick(SEARCH_ELSEWHERE)],
+  };
+
+  if (density === "sparse") {
+    return {
+      ...base,
+      title: `No dog parks mapped within ${formatDistance(searchedRadiusM)}`,
+      detail:
+        "Few dog parks are mapped in this part of the world, so this says more about the map than the ground — there may well be one nearby that nobody has added to OpenStreetMap yet.",
+    };
+  }
+
+  return {
+    ...base,
+    title: `No dog parks within ${formatDistance(searchedRadiusM)}`,
+    detail:
+      "OpenStreetMap has none mapped around here. Its coverage is uneven, so there may be a park that nobody has added yet.",
   };
 }
 
