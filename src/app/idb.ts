@@ -41,6 +41,18 @@ export function idbOpen(): Promise<IDBDatabase | null> {
   return dbPromise;
 }
 
+/**
+ * Clears the cached database-open promise.
+ *
+ * Exists for tests. A real page opens the database once and keeps that
+ * promise for as long as the tab is open, so nothing in the running app
+ * ever needs to forget it — only a test suite reusing one process across
+ * cases does.
+ */
+export function resetIdbOpen(): void {
+  dbPromise = null;
+}
+
 // ---------- Generic transaction helpers ----------
 
 /** Run a readonly request against the store and return its result. */

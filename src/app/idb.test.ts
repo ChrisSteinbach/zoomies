@@ -1,4 +1,10 @@
-import { idbPutAny, idbDelete, idbCleanupOldKeys } from "./idb";
+import {
+  idbPutAny,
+  idbDelete,
+  idbCleanupOldKeys,
+  idbOpen,
+  resetIdbOpen,
+} from "./idb";
 
 // ---------- Fake IDB ----------
 
@@ -164,6 +170,10 @@ describe("idbCleanupOldKeys", () => {
 describe("idbOpen", () => {
   const origIndexedDB = globalThis.indexedDB;
 
+  beforeEach(() => {
+    resetIdbOpen();
+  });
+
   afterEach(() => {
     globalThis.indexedDB = origIndexedDB;
   });
@@ -202,13 +212,10 @@ describe("idbOpen", () => {
     const fakeDB = {} as IDBDatabase;
     const { getCallCount } = installFakeIndexedDB(fakeDB, 1);
 
-    vi.resetModules();
-    const { idbOpen: freshOpen } = await import("./idb");
-
-    const first = await freshOpen();
+    const first = await idbOpen();
     expect(first).toBeNull();
 
-    const second = await freshOpen();
+    const second = await idbOpen();
     expect(second).toBe(fakeDB);
     expect(getCallCount()).toBe(2);
   });
@@ -217,14 +224,11 @@ describe("idbOpen", () => {
     const fakeDB = {} as IDBDatabase;
     const { getCallCount } = installFakeIndexedDB(fakeDB, 3);
 
-    vi.resetModules();
-    const { idbOpen: freshOpen } = await import("./idb");
+    expect(await idbOpen()).toBeNull();
+    expect(await idbOpen()).toBeNull();
+    expect(await idbOpen()).toBeNull();
 
-    expect(await freshOpen()).toBeNull();
-    expect(await freshOpen()).toBeNull();
-    expect(await freshOpen()).toBeNull();
-
-    const result = await freshOpen();
+    const result = await idbOpen();
     expect(result).toBe(fakeDB);
     expect(getCallCount()).toBe(4);
   });
@@ -233,11 +237,8 @@ describe("idbOpen", () => {
     const fakeDB = {} as IDBDatabase;
     installFakeIndexedDB(fakeDB, 1);
 
-    vi.resetModules();
-    const { idbOpen: freshOpen } = await import("./idb");
-
     // Both calls issued before the microtask fires share the same promise
-    const [a, b] = await Promise.all([freshOpen(), freshOpen()]);
+    const [a, b] = await Promise.all([idbOpen(), idbOpen()]);
     expect(a).toBeNull();
     expect(b).toBeNull();
   });
@@ -246,11 +247,8 @@ describe("idbOpen", () => {
     const fakeDB = {} as IDBDatabase;
     const { getCallCount } = installFakeIndexedDB(fakeDB, 0);
 
-    vi.resetModules();
-    const { idbOpen: freshOpen } = await import("./idb");
-
-    const first = await freshOpen();
-    const second = await freshOpen();
+    const first = await idbOpen();
+    const second = await idbOpen();
 
     expect(first).toBe(fakeDB);
     expect(second).toBe(fakeDB);
@@ -260,10 +258,7 @@ describe("idbOpen", () => {
   it("returns null when indexedDB is undefined", async () => {
     delete (globalThis as any).indexedDB;
 
-    vi.resetModules();
-    const { idbOpen: freshOpen } = await import("./idb");
-
-    const result = await freshOpen();
+    const result = await idbOpen();
     expect(result).toBeNull();
   });
 });
