@@ -142,6 +142,33 @@ describe("the note beside the chip", () => {
     expect(retries).toHaveLength(1);
   });
 
+  it("reads as a caveat, not a failure, when stale spots are still showing", () => {
+    const container = mount();
+
+    renderLayerToggle(
+      container,
+      {
+        kind: "failed",
+        staleSpots: [
+          {
+            id: "way/9",
+            kind: "bathing_spot",
+            lat: 59.32,
+            lon: 18.03,
+            tags: {},
+            provenance: "permitted",
+          },
+        ],
+      },
+      callbacks(),
+    );
+
+    expect(container.textContent).toContain(
+      "These bathing spots may be out of date.",
+    );
+    expect(container.textContent).not.toContain("Couldn’t load");
+  });
+
   it("disappears when the layer is toggled off", () => {
     const container = mount();
 

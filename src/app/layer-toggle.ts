@@ -89,7 +89,13 @@ function noteFor(bathing: BathingLayer): {
           }
         : null;
     case "failed":
-      return { text: "Couldn’t load bathing spots.", retry: true };
+      // Stale spots are still on screen, so "couldn't load" would read as a
+      // contradiction next to the pins the user can see. status-view.ts faces
+      // the same choice for the main list and settles on the same framing:
+      // a caveat on what is showing, not a claim that nothing is.
+      return bathing.staleSpots.length > 0
+        ? { text: "These bathing spots may be out of date.", retry: true }
+        : { text: "Couldn’t load bathing spots.", retry: true };
   }
 }
 
