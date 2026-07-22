@@ -255,6 +255,10 @@ export function composeApp(root: HTMLElement, deps: AppDeps = {}): AppHandle {
         pickerElement.hidden = true;
         return;
 
+      case "frame-map":
+        map.frame(effect.position);
+        return;
+
       case "open-directions":
         openUrl(directionsUrl(effect.spot, effect.origin));
         return;

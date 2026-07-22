@@ -433,6 +433,29 @@ describe("createSpotMap", () => {
     map.destroy();
   });
 
+  it("goes where a deliberate reposition points it", () => {
+    const container = mount();
+    const map = createSpotMap(container, { onSelect: vi.fn() });
+
+    map.render([BJORNS], SLUSSEN, null);
+    const before = placedAt(youAreHere(container)[0]);
+
+    // The user picked a spot up in Vanadislunden. Centred on it, the marker
+    // lands exactly on the container's midpoint (390×640, stubbed above) —
+    // which the old Slussen viewport could not produce for a position three
+    // kilometres away.
+    const origin = { lat: VANADIS.lat, lon: VANADIS.lon };
+    map.frame(origin);
+    map.render([BJORNS], origin, null);
+
+    const you = youAreHere(container)[0];
+    expect(placedAt(you)).not.toBe(before);
+    expect(you.style.left).toBe("195px");
+    expect(you.style.top).toBe("320px");
+
+    map.destroy();
+  });
+
   it("takes down the pins of results that are gone", () => {
     const container = mount();
     const map = createSpotMap(container, { onSelect: vi.fn() });
@@ -465,6 +488,15 @@ describe("createSpotMap", () => {
     map.destroy();
 
     expect(() => map.render([BJORNS], SLUSSEN, null)).not.toThrow();
+  });
+
+  it("ignores a frame that arrives after it was destroyed", () => {
+    const container = mount();
+    const map = createSpotMap(container, { onSelect: vi.fn() });
+
+    map.destroy();
+
+    expect(() => map.frame(SLUSSEN)).not.toThrow();
   });
 
   it("survives being destroyed twice", () => {

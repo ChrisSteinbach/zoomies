@@ -140,6 +140,16 @@ export type Effect =
   | { kind: "search-bathing"; position: LatLon }
   | { kind: "open-picker" }
   | { kind: "close-picker" }
+  /**
+   * Point the results map at a new search origin.
+   *
+   * Emitted only for deliberate repositions — a picked spot, or a resume
+   * landing far from the one it left — never for ordinary movement. The map
+   * frames itself once at startup and after that the viewport belongs to the
+   * user (spot-map.ts); this effect is the user saying "look there", which
+   * is the one thing that overrules that.
+   */
+  | { kind: "frame-map"; position: LatLon }
   | { kind: "open-directions"; spot: DogSpot; origin: LatLon | null };
 
 export interface TransitionResult {
@@ -226,10 +236,13 @@ function decide(state: AppState, event: Event): TransitionResult {
           bathing: bathing.bathing,
         },
         // Stop the watcher: the user has said where they are, and a GPS fix
-        // arriving afterwards would silently undo that.
+        // arriving afterwards would silently undo that. The map goes to the
+        // chosen spot before the search is even answered — the choice is the
+        // thing to look at, not the old neighbourhood's pins.
         effects: [
           { kind: "close-picker" },
           { kind: "stop-watching" },
+          { kind: "frame-map", position: event.position },
           { kind: "search", position: event.position },
           ...bathing.effects,
         ],
@@ -391,6 +404,17 @@ function positionFixed(state: AppState, position: LatLon): TransitionResult {
   // overrule it. The watcher is stopped on pick, so this is belt and braces.
   if (state.positionSource === "picked") return stay(state);
 
+  // With a position on screen, a null source means `follow-requested` is
+  // waiting for exactly this fix: a deliberate return to the device, so the
+  // map goes to it — as it goes to a picked spot. A fix while already
+  // following is just movement, and the viewport belongs to the user. Only
+  // the far branches spread this: landing beside the spot the map is already
+  // pointed at needs no pointing.
+  const resumeFrame: Effect[] =
+    state.positionSource === null && hasPosition(state)
+      ? [{ kind: "frame-map", position }]
+      : [];
+
   const withGps = { ...state, positionSource: "gps" as const };
 
   switch (state.phase.kind) {
@@ -427,7 +451,11 @@ function positionFixed(state: AppState, position: LatLon): TransitionResult {
           phase: { ...state.phase, position },
           bathing: bathing.bathing,
         },
-        effects: [{ kind: "search", position }, ...bathing.effects],
+        effects: [
+          ...resumeFrame,
+          { kind: "search", position },
+          ...bathing.effects,
+        ],
       };
     }
 
@@ -456,7 +484,11 @@ function positionFixed(state: AppState, position: LatLon): TransitionResult {
           },
           bathing: bathing.bathing,
         },
-        effects: [{ kind: "search", position }, ...bathing.effects],
+        effects: [
+          ...resumeFrame,
+          { kind: "search", position },
+          ...bathing.effects,
+        ],
       };
     }
   }
