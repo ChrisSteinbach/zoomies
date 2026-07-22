@@ -20,8 +20,10 @@ npm run format:fix    # Prettier auto-fix only
 npm run dev           # Start Vite dev server (binds 0.0.0.0 for phone testing)
 npm run build         # Production build → dist/
 npm run preview       # Serve the production build locally
-npm run data:build    # Cut the offline dataset from a Geofabrik extract
+npm run data:build    # Cut a regional dataset from one Geofabrik extract
                       #   (-- --pbf … --poly … --out …; needs osmium-tool)
+npm run data:seed     # Seed the global state (filter-one per region, then merge)
+npm run data:update   # Advance the state by daily diffs and rebuild the dataset
 ```
 
 Run a single test file: `npx vitest run src/app/geo.test.ts`
@@ -49,9 +51,10 @@ findDogParks(lat, lon, radiusM): Promise<DogSpot[]>
 ```
 
 Two implementations sit behind it. The offline dataset
-(`offline-dataset.ts`, built weekly by `pipeline/` from a Geofabrik extract)
-answers when the query circle lies wholly inside its coverage polygon; the
-live Overpass client answers everything else. For that to stay true:
+(`offline-dataset.ts` — planet-wide, seeded from Geofabrik extracts and
+advanced daily by `pipeline/` replaying OSM replication diffs) answers when
+the query circle lies wholly inside its coverage polygon; the live Overpass
+client answers everything else. For that to stay true:
 
 - **No Overpass-shaped types may cross the seam.** No `elements`, no `tags`
   bags, no `type: "node" | "way"`, no Overpass ids leaking as identity. The

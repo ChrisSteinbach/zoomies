@@ -45,10 +45,11 @@ Actions tab. Merging to `main` publishes nothing on its own.
 **Phase 2 (the hundbad layer) is live**, and **phase 4's offline data path
 is built** — pulled forward past phase 3, because field measurement put
 98.6% of a 44-second cold start inside the live Overpass query (see
-`bd show zoomies-lmf`). The app now answers from a weekly pre-built
-dataset wherever that dataset can honestly cover the question, and falls
-back to live Overpass everywhere else. Phase 3 (supplementary amenities)
-remains open:
+`bd show zoomies-lmf`). The app now answers from a pre-built dataset of
+every dog spot OpenStreetMap knows, planet-wide and refreshed daily,
+falling back to live Overpass only when the dataset cannot be had or the
+query strays where its coverage model refuses to answer. Phase 3
+(supplementary amenities) remains open:
 
 ```bash
 bd ready          # what is actionable now
@@ -72,7 +73,7 @@ return DOM; none of them owns application state.
 Data access is a decorator stack over one `PlaceProvider` that answers a
 single query. Expanding radius decides _how far_ to look, the offline
 dataset decides _from where_ — answering with a local scan when the
-weekly-built dataset covers the whole query circle, deferring to the live
+daily-built dataset covers the whole query circle, deferring to the live
 stack when it does not — the cache decides _whether to ask at all_, the
 fair-use guard decides _how often_, and the fallback decides _whom_ —
 trying the public Overpass mirror when the main instance says it is full —
@@ -82,23 +83,40 @@ expanding search over the one shared stack.
 
 ## The offline dataset
 
-A weekly workflow (**Refresh dataset**, Mondays 03:00 UTC, also runnable
-by hand from the Actions tab) downloads Geofabrik's Sweden extract, cuts
-it down with `osmium`, converts what survives with the same rules the
-live query uses, and force-pushes the result — one JSON file and an ODbL
-notice — as the single commit of the `dataset` branch. The app fetches
-that file once, keeps a copy in IndexedDB for offline reopens, and
-answers queries with a linear scan whenever the query circle lies wholly
-inside the dataset's coverage polygon. Outside it — or whenever the file
-cannot be had — the live Overpass stack answers exactly as before.
+The dataset is planet-wide and maintained in two motions:
 
-Until the workflow's first run the branch does not exist, the fetch
+**Seeded once** from Geofabrik's region extracts — all 215 files in
+`pipeline/regions.json`, ~76 GB walked one region at a time — filtered
+down with `osmium` to a global state file of just the dog-relevant
+objects (tens of MB), merged newest-version-wins. That state, plus its
+replication metadata, lives as assets on the repo's `data-state`
+release. The **Reseed state** workflow rebuilds it from nothing; it also
+runs fine locally (`npm run data:seed`).
+
+**Advanced daily** by the **Refresh dataset** workflow (03:30 UTC): it
+replays planet.osm.org's daily replication diffs (~85 MB a day for the
+whole planet, measured) onto the state, re-filters, repairs the
+geometry diffs cannot carry — a way retagged into scope arrives without
+its unchanged nodes, so `osmium check-refs` names it and the OSM
+editing API supplies it — then rebuilds the dataset with the same rules
+the live query uses, gates it against field-validated counts on four
+continents, and force-pushes one JSON file and an ODbL notice as the
+single commit of the `dataset` branch.
+
+The app fetches that file once (~1 MB gzipped), keeps a copy in
+IndexedDB for offline reopens, and answers queries with a linear scan.
+Whenever the file cannot be had — or a query circle strays within 25 km
+of the antimeridian, where the flat-plane coverage model conservatively
+refuses — the live Overpass stack answers exactly as before.
+
+Until the first seed-and-refresh the branch does not exist, the fetch
 404s, and every query stays on the live path: the designed rollout
 state, not an error. The published file is a derived database of
 OpenStreetMap, so it carries its attribution and ODbL share-alike terms
 in-band and in the branch README (`docs/spec.md` §4.1).
 
-To build the dataset locally (needs `osmium-tool` on PATH):
+The regional single-shot pipeline also remains, for spot builds and
+validation (needs `osmium-tool` on PATH):
 
 ```bash
 npm run data:build -- --pbf sweden.osm.pbf --poly sweden.poly --out dogspots-sweden.json
