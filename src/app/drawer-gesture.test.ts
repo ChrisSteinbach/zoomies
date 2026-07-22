@@ -23,11 +23,11 @@ if (typeof globalThis.PointerEvent === "undefined") {
 
 function pointerEvent(
   type: string,
-  opts: { clientX: number; timeStamp?: number },
+  opts: { clientX: number; timeStamp?: number; pointerId?: number },
 ): PointerEvent {
   const e = new PointerEvent(type, {
     clientX: opts.clientX,
-    pointerId: 1,
+    pointerId: opts.pointerId ?? 1,
     bubbles: true,
   });
   if (opts.timeStamp !== undefined) {
@@ -357,59 +357,43 @@ describe("drawer gesture", () => {
     const { handle, panel, isOpen } = createDrawer();
 
     // First finger starts drag
-    const down1 = new PointerEvent("pointerdown", {
-      clientX: HANDLE_AT_REST,
-      pointerId: 1,
-      bubbles: true,
-    });
-    Object.defineProperty(down1, "timeStamp", { value: 0 });
-    handle.dispatchEvent(down1);
+    handle.dispatchEvent(
+      pointerEvent("pointerdown", {
+        clientX: HANDLE_AT_REST,
+        pointerId: 1,
+        timeStamp: 0,
+      }),
+    );
 
     handle.dispatchEvent(
-      new PointerEvent("pointermove", {
-        clientX: 330,
-        pointerId: 1,
-        bubbles: true,
-      }),
+      pointerEvent("pointermove", { clientX: 330, pointerId: 1 }),
     );
     expect(panel.classList.contains("dragging")).toBe(true);
 
     // Second finger tries to start — should be ignored
     handle.dispatchEvent(
-      new PointerEvent("pointerdown", {
-        clientX: 200,
-        pointerId: 2,
-        bubbles: true,
-      }),
+      pointerEvent("pointerdown", { clientX: 200, pointerId: 2 }),
     );
 
     // Move from second pointer — should be ignored
     handle.dispatchEvent(
-      new PointerEvent("pointermove", {
-        clientX: 100,
-        pointerId: 2,
-        bubbles: true,
-      }),
+      pointerEvent("pointermove", { clientX: 100, pointerId: 2 }),
     );
 
     // Up from second pointer — should be ignored, gesture still active
     handle.dispatchEvent(
-      new PointerEvent("pointerup", {
-        clientX: 100,
-        pointerId: 2,
-        bubbles: true,
-      }),
+      pointerEvent("pointerup", { clientX: 100, pointerId: 2 }),
     );
     expect(panel.classList.contains("dragging")).toBe(true);
 
     // First pointer finishes with a fast swipe left to open
-    const up = new PointerEvent("pointerup", {
-      clientX: 330,
-      pointerId: 1,
-      bubbles: true,
-    });
-    Object.defineProperty(up, "timeStamp", { value: 20 });
-    handle.dispatchEvent(up);
+    handle.dispatchEvent(
+      pointerEvent("pointerup", {
+        clientX: 330,
+        pointerId: 1,
+        timeStamp: 20,
+      }),
+    );
 
     expect(panel.classList.contains("dragging")).toBe(false);
     expect(isOpen()).toBe(true);
