@@ -15,6 +15,7 @@ import "./spot-map.css";
 import type { DogSpot, DogSpotKind, LatLon } from "./types";
 import { worldZoomBounds } from "./map-bounds";
 import { OSM_TILE_ATTRIBUTION } from "./attribution";
+import { locationPinIcon } from "./map-icons";
 import { spotLabel } from "./spot-list";
 
 const OSM_TILE_URL = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
@@ -43,14 +44,18 @@ const SELECTED_Z_OFFSET = 1000;
 
 /**
  * Markers are drawn as inline data URIs rather than files from
- * `leaflet/dist/images`, for the reason map-picker.ts gives: Leaflet resolves
+ * `leaflet/dist/images`, for the reason map-icons.ts gives: Leaflet resolves
  * its default marker images relative to wherever its stylesheet ended up, which
  * survives `npm run dev` and then 404s in a hashed production build.
  *
- * The dog-park pin and the you-are-here marker differ in shape, colour and
- * anchor — a green teardrop planted on a point versus a blue dot centred on
- * one. Telling "a park is there" from "you are here" at a glance, one-handed,
- * outdoors, is the whole job of this map; they must not be a colour swap apart.
+ * The you-are-here marker is tour-guide's red pin (map-icons.ts) — the same
+ * pin the picker plants, so "where you are" and "where you said you are" read
+ * as one symbol across the app. The result pins are this module's own smaller
+ * teardrops. Telling "a park is there" from "you are here" at a glance,
+ * one-handed, outdoors, is the whole job of this map, and the user's pin
+ * holds itself apart on every axis it has: red against the layers' green and
+ * blue, a size up, drop-shadowed, a different silhouette, and the one marker
+ * that ignores taps.
  */
 const PIN_PATH =
   "M12 0C5.37 0 0 5.37 0 12c0 9 12 22 12 22s12-13 12-22C24 5.37 18.63 0 12 0z";
@@ -66,10 +71,9 @@ const PIN_PATH =
  * caveats a dog park does not (docs/spec.md §4.5.3), and the pin is what sends
  * someone to open the row and read them.
  *
- * The blue is deliberately dark and green-leaning rather than the azure of the
- * you-are-here dot below. Shape already separates those two — a teardrop
- * planted on a point against a dot centred on one — and this keeps the colours
- * from arguing with that.
+ * The blue is deliberately dark and green-leaning: the layers have to hold
+ * apart from each other at a glance, and neither may drift toward the red
+ * that means "you are here".
  */
 const PIN_COLOURS: Record<DogSpotKind, { pin: string; selected: string }> = {
   dog_park: { pin: "#1a6b3c", selected: "#12522e" },
@@ -100,14 +104,6 @@ function selectedPinSvg(fill: string): string {
     `<circle cx="12" cy="12" r="2.75" fill="${fill}"/></svg>`
   );
 }
-
-/** The familiar blue dot, because every maps app on the phone already means
- *  "you are here" by it. */
-const USER_DOT_SVG =
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">' +
-  '<circle cx="12" cy="12" r="11" fill="#1a73e8" fill-opacity="0.25"/>' +
-  '<circle cx="12" cy="12" r="6" fill="#1a73e8" stroke="#fff" ' +
-  'stroke-width="2.5"/></svg>';
 
 function svgIcon(
   svg: string,
@@ -151,8 +147,9 @@ const SPOT_ICONS: Record<DogSpotKind, { pin: L.Icon; selected: L.Icon }> = {
   bathing_spot: iconsFor("bathing_spot"),
 };
 
-/** The dot is anchored on its middle, which is the user. */
-const userIcon = svgIcon(USER_DOT_SVG, [24, 24], [12, 12], "spot-map-you");
+/** The user's marker: the red pin, wearing the class the stylesheet uses to
+ *  keep it untappable. Built once, like the spot icons above. */
+const userIcon = locationPinIcon("spot-map-you");
 
 /** The icon a spot of this kind is drawn with, selected or not. */
 function iconFor(kind: DogSpotKind, selected: boolean): L.Icon {
