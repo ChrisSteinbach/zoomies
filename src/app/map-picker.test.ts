@@ -39,6 +39,10 @@ function confirmButton(container: HTMLElement): HTMLButtonElement {
   return container.querySelector<HTMLButtonElement>(".map-picker-confirm")!;
 }
 
+function cancelButton(container: HTMLElement): HTMLButtonElement {
+  return container.querySelector<HTMLButtonElement>(".map-picker-cancel")!;
+}
+
 function searchFor(container: HTMLElement, query: string): void {
   container.querySelector<HTMLInputElement>(".map-picker-search-input")!.value =
     query;
@@ -176,6 +180,39 @@ describe("createMapPicker", () => {
 
     confirmButton(container).click();
     expect(onPick).toHaveBeenCalledTimes(1);
+
+    picker.destroy();
+  });
+
+  it("reports a cancel when the user backs out", () => {
+    const onCancel = vi.fn();
+    const picker = createMapPicker(container, {
+      onPick: vi.fn(),
+      onCancel,
+      center: STOCKHOLM,
+      search: findsNothing,
+    });
+
+    cancelButton(container).click();
+
+    expect(onCancel).toHaveBeenCalledTimes(1);
+
+    picker.destroy();
+  });
+
+  it("does not also report a cancel when the user confirms a pick", () => {
+    const onCancel = vi.fn();
+    const picker = createMapPicker(container, {
+      onPick: vi.fn(),
+      onCancel,
+      center: STOCKHOLM,
+      search: findsNothing,
+    });
+
+    tapMap(container);
+    confirmButton(container).click();
+
+    expect(onCancel).not.toHaveBeenCalled();
 
     picker.destroy();
   });
