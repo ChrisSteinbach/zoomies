@@ -76,16 +76,19 @@ export interface Dataset {
 }
 
 /**
- * Where the weekly pipeline publishes the dataset: the repo's `dataset`
+ * Where the daily pipeline publishes the dataset: the repo's `dataset`
  * branch, served raw. raw.githubusercontent.com answers with
  * `Access-Control-Allow-Origin: *`, so the app can fetch it cross-origin,
- * and its CDN caches for ~5 minutes — nothing next to the file's weekly
- * cadence. Until the first pipeline run the branch does not exist and this
- * URL answers 404: the designed first-rollout state, which reads as "no
- * dataset" and leaves every query on the live path.
+ * and its CDN caches for ~5 minutes — nothing next to the file's daily
+ * cadence. The file is the whole planet's dog spots (~1 MB gzipped), cut
+ * from a seeded OSM state that the pipeline keeps current by replaying the
+ * planet's daily replication diffs. Until the first pipeline run the branch
+ * does not exist and this URL answers 404: the designed first-rollout
+ * state, which reads as "no dataset" and leaves every query on the live
+ * path.
  */
 export const DEFAULT_DATASET_URL =
-  "https://raw.githubusercontent.com/ChrisSteinbach/zoomies/dataset/dogspots-sweden.json";
+  "https://raw.githubusercontent.com/ChrisSteinbach/zoomies/dataset/dogspots.json";
 
 /**
  * How long the dataset fetch may run before we abort it.

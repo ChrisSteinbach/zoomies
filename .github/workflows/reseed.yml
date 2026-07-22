@@ -1,0 +1,196 @@
+name: Reseed state
+
+# Rebuilds the offline data state from scratch (docs/spec.md §5): the
+# manual counterpart to data.yml, for the situations no schedule covers —
+# the first bootstrap, a FILTER_VERSION bump (update-state.ts refuses a
+# state filtered under old expressions), or a state so far behind its
+# --max-diffs budget that replaying diffs would cost more than re-seeding.
+#
+# The region walk is disk-tight by design. The extracts in
+# pipeline/regions.json total ~80 GB — several times a stock runner's disk
+# — so each one is downloaded (largest ~5 GB), filtered down to a sliver,
+# and deleted before the next; peak usage stays around one extract. The
+# run ends by invoking the same update engine as the daily job: a fresh
+# seed deliberately starts ~a day behind the replication head (the
+# deletion-safety margin in seed-state.ts), and the catch-up closes that
+# gap and produces the dataset, publishing exactly as data.yml does.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# The group is SHARED with data.yml on purpose: a reseed and a daily
+# refresh force-push the same dataset branch and clobber the same release
+# assets, so the two must never run concurrently. No cancel-in-progress —
+# whichever is running finishes, the other waits its turn.
+concurrency:
+  group: refresh-dataset
+
+jobs:
+  reseed:
+    runs-on: ubuntu-latest
+    # The hosted-runner ceiling: a couple of hundred downloads and filter
+    # passes dominate the clock, and most of that is network time.
+    timeout-minutes: 360
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install osmium
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y osmium-tool
+
+      # The walk below survives on deleting as it goes; if a run dies of a
+      # full disk anyway, this snapshot is the first diagnostic to read.
+      - name: Show disk headroom
+        run: df -h
+
+      # One region at a time: download, filter to the dog-relevant slice,
+      # delete the download. Geofabrik's guidelines ask non-browser clients
+      # to identify themselves, hence the descriptive UA; -sS keeps 200+
+      # progress meters out of the log while keeping errors in it. Ids like
+      # us/alabama are flattened to us-alabama because they become
+      # filenames, and the merge step reads its --dir flat. Any failure
+      # aborts the job (set -euo pipefail): a seed quietly missing a region
+      # would be a hole in the planet nobody notices until a dog park is
+      # gone.
+      - name: Download and filter every region
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/filtered
+          jq -r '.regions[] | [.id, .pbf] | @tsv' pipeline/regions.json > /tmp/regions.tsv
+          mapfile -t regions < /tmp/regions.tsv
+          total="${#regions[@]}"
+          if [ "$total" -eq 0 ]; then
+            echo "pipeline/regions.json lists no regions — nothing to seed from" >&2
+            exit 1
+          fi
+          n=0
+          for row in "${regions[@]}"; do
+            IFS=$'\t' read -r id pbf <<<"$row"
+            n=$((n + 1))
+            echo "[${n}/${total}] ${id}"
+            curl -fL --retry 3 --retry-delay 30 -sS \
+              -A "zoomies-data/0.1 (+https://github.com/ChrisSteinbach/zoomies)" \
+              -o /tmp/region.osm.pbf \
+              "$pbf"
+            npx tsx pipeline/seed-state.ts filter-one \
+              --pbf /tmp/region.osm.pbf \
+              --out "/tmp/filtered/${id//\//-}.osm.pbf"
+            rm -f /tmp/region.osm.pbf
+          done
+          # One filtered file per region, counted exactly as the merge step
+          # will read them (top level only), or the merge would quietly
+          # cover less of the planet than regions.json promises.
+          made="$(find /tmp/filtered -maxdepth 1 -name '*.osm.pbf' | wc -l)"
+          if [ "$made" -ne "$total" ]; then
+            echo "Filtered ${made} files for ${total} regions (colliding ids?) — refusing to merge an incomplete planet" >&2
+            exit 1
+          fi
+
+      # Newest-object-version-wins merge of the overlapping region cuts,
+      # plus the replay bookmark (state.json) the update engine starts
+      # from.
+      - name: Merge the filtered regions into one state
+        run: |
+          mkdir -p /tmp/seeded
+          npx tsx pipeline/seed-state.ts merge \
+            --dir /tmp/filtered \
+            --out-state /tmp/seeded/state.osm.pbf \
+            --out-meta /tmp/seeded/state.json
+
+      # A fresh seed starts ~a day behind on purpose — the margin against
+      # deletions falling between a region's cut and the replay start — so
+      # the same engine the daily job runs brings it to the replication
+      # head and builds the dataset before anything is published.
+      - name: Catch up to the replication head and build the dataset
+        run: |
+          mkdir -p /tmp/out
+          npx tsx pipeline/update-state.ts \
+            --state /tmp/seeded/state.osm.pbf \
+            --meta /tmp/seeded/state.json \
+            --out-state /tmp/out/state.osm.pbf \
+            --out-meta /tmp/out/state.json \
+            --out-dataset /tmp/out/dogspots.json
+
+      # The dataset branch is a publish target like gh-pages, not history:
+      # exactly one orphan commit holding the file and a README, force-
+      # pushed each day. The README exists because ODbL makes this file a
+      # derived database (spec §4.1) — attribution and share-alike must
+      # travel with it, readable by someone who finds the branch cold.
+      # KEEP IN SYNC with the identical step in data.yml — duplication was
+      # chosen over a composite action so each workflow reads whole.
+      - name: Publish to the dataset branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          generated="$(date -u +%Y-%m-%d)"
+          publish="$(mktemp -d)"
+          cp /tmp/out/dogspots.json "$publish/dogspots.json"
+          cat > "$publish/README.md" <<EOF
+          # Zoomies offline dataset
+
+          **dogspots.json** holds every dog park and dog bathing spot in
+          OpenStreetMap, planet-wide, pre-converted into the format the
+          [zoomies](https://github.com/ChrisSteinbach/zoomies) app reads. The
+          app fetches it from this branch's raw URL to answer nearby-spots
+          queries without a live Overpass round-trip.
+
+          The file is seeded from Geofabrik region extracts and then kept
+          current by replaying planet.osm.org daily replication diffs, with
+          geometry the diffs cannot carry repaired via the OSM editing API.
+
+          - Region: planet
+          - Generated: ${generated}
+
+          The data is © OpenStreetMap contributors. This file is a derived
+          database of OpenStreetMap and is published under the
+          [Open Database License (ODbL) 1.0](https://opendatacommons.org/licenses/odbl/1-0/);
+          share-alike applies to anything derived from it in turn.
+
+          This branch is a publish target, not history: each daily refresh
+          force-pushes a single orphan commit. The pipeline that generates
+          the file lives in the
+          [zoomies repository](https://github.com/ChrisSteinbach/zoomies).
+          EOF
+          cd "$publish"
+          git init --quiet --initial-branch=dataset
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dogspots.json README.md
+          git commit --quiet -m "Refresh dataset: planet, ${generated}"
+          git push --quiet --force \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            dataset:refs/heads/dataset
+
+      # Same ordering as data.yml: dataset branch first, state second — a
+      # failed upload costs a re-run, never coherence. Unlike the daily
+      # job, the release may not exist yet (a first bootstrap has nothing
+      # to download), so it is created on the spot before the assets land.
+      - name: Upload the seeded state to the data-state release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes="$(cat <<'EOF'
+          state.osm.pbf is the globally filtered OSM state and state.json is
+          its replication metadata: the working set the daily "Refresh
+          dataset" workflow downloads, advances with planet replication
+          diffs, and uploads back. Not for app consumption — the published
+          dataset lives on the dataset branch. Data © OpenStreetMap
+          contributors, released under the Open Database License (ODbL) 1.0
+          (https://opendatacommons.org/licenses/odbl/1-0/); share-alike
+          applies to anything derived from it.
+          EOF
+          )"
+          gh release view data-state >/dev/null 2>&1 ||
+            gh release create data-state --title "Offline data state" --notes "$notes"
+          gh release upload data-state /tmp/out/state.osm.pbf /tmp/out/state.json --clobber
