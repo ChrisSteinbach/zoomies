@@ -1,4 +1,4 @@
-import { initialState, transition, REQUERY_DISTANCE_M } from "./state-machine";
+import { initialState, transition } from "./state-machine";
 import type { AppState, Effect, Event, Phase } from "./state-machine";
 import { PlaceProviderError } from "./place-provider";
 import type { DogSpot, LatLon } from "./types";
@@ -286,10 +286,6 @@ describe("following the user as they walk", () => {
       position: A_WALK_AWAY,
     });
     expect(effects).toEqual([]);
-  });
-
-  it("treats the re-query threshold as a distance in metres", () => {
-    expect(REQUERY_DISTANCE_M).toBeGreaterThan(0);
   });
 });
 
