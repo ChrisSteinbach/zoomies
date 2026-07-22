@@ -99,19 +99,24 @@ function flush(): Promise<void> {
  */
 function fakePicker() {
   let onPick: ((position: LatLon) => void) | undefined;
+  let onCancel: (() => void) | undefined;
   const destroy = vi.fn();
 
   return {
     destroy,
     create: (
       _container: HTMLElement,
-      options: { onPick: (p: LatLon) => void },
+      options: { onPick: (p: LatLon) => void; onCancel?: () => void },
     ) => {
       onPick = options.onPick;
+      onCancel = options.onCancel;
       return { destroy };
     },
     pick(position: LatLon) {
       onPick?.(position);
+    },
+    cancel() {
+      onCancel?.();
     },
     get isOpen() {
       return onPick !== undefined;
@@ -229,6 +234,37 @@ describe("when the device will not say where the user is", () => {
 
     expect(picker.destroy).toHaveBeenCalled();
     expect(root.querySelector<HTMLElement>(".app-picker")!.hidden).toBe(true);
+  });
+});
+
+describe("cancelling the picker", () => {
+  it("puts the previous results back when the user backs out without picking", async () => {
+    const { root, gps, search, picker } = mount();
+
+    gps.fix(TANTOLUNDEN);
+    await search.answer([TANTO, DRAKEN]);
+    gps.fix(FAR_ENOUGH);
+    // Not retryable, so the only action offered is the picker — opened here
+    // over the stale results the failed refresh left on screen.
+    await search.fail(
+      new PlaceProviderError("malformed-response", "could not read that"),
+    );
+    root.querySelector<HTMLButtonElement>(".status-action-primary")!.click();
+
+    expect(picker.isOpen).toBe(true);
+    expect(root.querySelector<HTMLElement>(".app-picker")!.hidden).toBe(false);
+
+    picker.cancel();
+
+    expect(picker.destroy).toHaveBeenCalled();
+    expect(root.querySelector<HTMLElement>(".app-picker")!.hidden).toBe(true);
+    expect(statusText(root)).toMatch(/out of date/i);
+    // Sorted by distance from where the user is now (FAR_ENOUGH), not from
+    // where the original search ran.
+    expect(parkNames(root)).toEqual([
+      "Drakenbergsparkens hundrastgård",
+      "Tantolundens hundrastgård",
+    ]);
   });
 });
 

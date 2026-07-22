@@ -313,6 +313,7 @@ export function composeApp(root: HTMLElement, deps: AppDeps = {}): AppHandle {
     picker = createPicker(pickerElement, {
       center: currentPosition(state.phase) ?? undefined,
       onPick: (position) => dispatch({ kind: "position-picked", position }),
+      onCancel: () => dispatch({ kind: "pick-cancelled" }),
     });
   }
 
