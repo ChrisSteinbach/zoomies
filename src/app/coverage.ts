@@ -103,11 +103,15 @@ export function circleWithinCoverage(
  * spellings of a ring read the same.
  *
  * A point exactly on the boundary is ambiguous under ray casting, and
- * harmlessly so here: such a point is at distance zero from that boundary,
- * so {@link circleWithinCoverage} refuses it for any positive radius no
- * matter which way the ambiguity falls.
+ * harmlessly so for both callers: here, such a point is at distance zero
+ * from that boundary, so {@link circleWithinCoverage} refuses it for any
+ * positive radius no matter which way the ambiguity falls; in
+ * mapping-density.ts the rings are deliberate coarse approximations, so
+ * either reading of an exactly-on-the-line point is within the heuristic's
+ * tolerance. Exported for that second caller: same geometry, same [lat, lon]
+ * convention, same disclaimers about the antimeridian and the poles.
  */
-function pointInRing(point: LatLon, ring: Ring): boolean {
+export function pointInRing(point: LatLon, ring: Ring): boolean {
   let inside = false;
   for (let i = 0; i < ring.length; i += 1) {
     const [latA, lonA] = ring[i];
