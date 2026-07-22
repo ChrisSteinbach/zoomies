@@ -14,6 +14,18 @@ name: Reseed state
 # seed deliberately starts ~a day behind the replication head (the
 # deletion-safety margin in seed-state.ts), and the catch-up closes that
 # gap and produces the dataset, publishing exactly as data.yml does.
+#
+# The walk is also resumable, twice over. Within a run, curl retries with
+# resume (-C - with --retry-all-errors): a 2026-07-22 seed attempt over a
+# residential line watched four transfers die mid-stream with errors
+# curl's default --retry does not cover, and a 76 GB walk gets no benefit
+# of the doubt. Across runs, the filtered slivers (a few MB, never the
+# downloads) are saved as a short-lived workflow artifact even when the
+# job fails, and the next dispatch restores them and skips what is
+# already cut — so a late failure or the 6-hour ceiling costs a
+# re-dispatch, not a restart. Mixing cuts from different days is sound by
+# construction: the merge keys its replay on the OLDEST cut minus a day,
+# and the catch-up replays everything since.
 on:
   workflow_dispatch:
 
@@ -54,15 +66,42 @@ jobs:
       - name: Show disk headroom
         run: df -h
 
+      # A previous attempt's filtered slivers, if any survive within the
+      # artifact's retention. The name carries pipeline/filter.ts's hash so
+      # a filter change can never resume from slivers cut under the old
+      # expressions — the same staleness update-state.ts's filterVersion
+      # gate refuses. Nothing found is the normal first-run case.
+      - name: Restore progress from a previous attempt
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/filtered
+          name="reseed-progress-${{ hashFiles('pipeline/filter.ts') }}"
+          artifact_id="$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?name=${name}&per_page=10" \
+            --jq '[.artifacts[] | select(.expired == false)][0].id // empty')"
+          if [ -n "$artifact_id" ]; then
+            gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" > /tmp/progress.zip
+            unzip -oq /tmp/progress.zip -d /tmp/filtered
+            rm -f /tmp/progress.zip
+            echo "Resumed $(find /tmp/filtered -maxdepth 1 -name '*.osm.pbf' | wc -l) already-filtered regions"
+          else
+            echo "No previous progress to resume — starting from the first region"
+          fi
+
       # One region at a time: download, filter to the dog-relevant slice,
       # delete the download. Geofabrik's guidelines ask non-browser clients
       # to identify themselves, hence the descriptive UA; -sS keeps 200+
-      # progress meters out of the log while keeping errors in it. Ids like
-      # us/alabama are flattened to us-alabama because they become
-      # filenames, and the merge step reads its --dir flat. Any failure
-      # aborts the job (set -euo pipefail): a seed quietly missing a region
-      # would be a hole in the planet nobody notices until a dog park is
-      # gone.
+      # progress meters out of the log while keeping errors in it. curl
+      # gets --retry-all-errors and resume (-C -, honoured across retries
+      # since curl 7.71): a 76 GB walk over the public internet WILL see
+      # mid-transfer resets — four were observed in one local attempt — and
+      # the default --retry does not cover them. Ids like us/alabama are
+      # flattened to us-alabama because they become filenames, and the
+      # merge step reads its --dir flat. Regions already filtered by a
+      # resumed attempt are skipped. Any failure aborts the job
+      # (set -euo pipefail): a seed quietly missing a region would be a
+      # hole in the planet nobody notices until a dog park is gone.
       - name: Download and filter every region
         run: |
           set -euo pipefail
@@ -78,14 +117,19 @@ jobs:
           for row in "${regions[@]}"; do
             IFS=$'\t' read -r id pbf <<<"$row"
             n=$((n + 1))
+            out="/tmp/filtered/${id//\//-}.osm.pbf"
+            if [ -s "$out" ] && [ -s "${out}.timestamp.txt" ]; then
+              echo "[${n}/${total}] ${id} (already filtered — resumed)"
+              continue
+            fi
             echo "[${n}/${total}] ${id}"
-            curl -fL --retry 3 --retry-delay 30 -sS \
+            curl -fL --retry 8 --retry-delay 30 --retry-all-errors -C - -sS \
               -A "zoomies-data/0.1 (+https://github.com/ChrisSteinbach/zoomies)" \
               -o /tmp/region.osm.pbf \
               "$pbf"
             npx tsx pipeline/seed-state.ts filter-one \
               --pbf /tmp/region.osm.pbf \
-              --out "/tmp/filtered/${id//\//-}.osm.pbf"
+              --out "$out"
             rm -f /tmp/region.osm.pbf
           done
           # One filtered file per region, counted exactly as the merge step
@@ -93,9 +137,22 @@ jobs:
           # cover less of the planet than regions.json promises.
           made="$(find /tmp/filtered -maxdepth 1 -name '*.osm.pbf' | wc -l)"
           if [ "$made" -ne "$total" ]; then
-            echo "Filtered ${made} files for ${total} regions (colliding ids?) — refusing to merge an incomplete planet" >&2
+            echo "Filtered ${made} files for ${total} regions (colliding ids, or a resumed sliver for a region no longer in regions.json?) — refusing to merge a planet that does not match the manifest" >&2
             exit 1
           fi
+
+      # Saved even when the walk fails — that is the entire point: the next
+      # dispatch resumes from these slivers instead of re-downloading the
+      # planet. A few MB for a few days; the successful-run upload is
+      # harmless and expires on its own.
+      - name: Save progress for a possible next attempt
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: reseed-progress-${{ hashFiles('pipeline/filter.ts') }}
+          path: /tmp/filtered
+          retention-days: 7
+          if-no-files-found: ignore
 
       # Newest-object-version-wins merge of the overlapping region cuts,
       # plus the replay bookmark (state.json) the update engine starts
