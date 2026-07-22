@@ -134,5 +134,17 @@ bd close <id>         # Complete work
 
 ## Branching
 
-**Always work on a feature branch**, never commit directly to `main`. Changes
-land through pull requests.
+**Always work on a feature branch**, never commit directly to `main` —
+GitHub rejects direct pushes. Changes land through pull requests, and
+merging is gated by the repo's `protect-main` ruleset:
+
+- The five CI jobs — `lint`, `type-check`, `build`, `test`, `e2e` — are
+  required status checks; a PR with any of them red cannot merge.
+- The branch must be up to date with `main` when it merges.
+- History stays linear: squash or rebase merges only, no merge commits.
+- Force-pushing to `main` and deleting `main` are blocked outright.
+
+Run `npm test` before pushing to keep the PR green; `npm run test:e2e`
+needs the Playwright browser installed (see Commands above). The lint job
+runs Prettier, ESLint and Stylelint as separate steps, so a red check names
+the tool that failed.

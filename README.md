@@ -42,6 +42,11 @@ prompt. The certificate is self-signed; accept the warning once.
 Deploys are manual — run the **Deploy to GitHub Pages** workflow from the
 Actions tab. Merging to `main` publishes nothing on its own.
 
+Changes land through pull requests only: direct pushes to `main` are
+rejected, merges must keep history linear (squash or rebase), and the five
+CI checks — lint, type-check, build, test, e2e — must all pass before a PR
+can merge.
+
 **Phase 2 (the hundbad layer) is live**, and **phase 4's offline data path
 is built** — pulled forward past phase 3, because field measurement put
 98.6% of a 44-second cold start inside the live Overpass query (see
