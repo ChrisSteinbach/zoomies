@@ -1,4 +1,10 @@
-import { asBathingSpot, isBathingCandidate, isDogPark } from "./osm-tags";
+import {
+  asBathingSpot,
+  asDogPark,
+  isBathingCandidate,
+  isDogPark,
+  toSpotTags,
+} from "./osm-tags";
 
 /**
  * The predicates exist for the offline dataset converter, which must decide
@@ -91,5 +97,161 @@ describe("what counts as a bathing candidate", () => {
         tags,
       ),
     ).toBeUndefined();
+  });
+});
+
+/**
+ * `toSpotTags` is the display-tag half of the translation: it decides what a
+ * user sees about fencing, lighting and ground surface. Both `overpass.ts`
+ * and the offline converter feed raw OSM tags through this one function, so
+ * the matrix belongs here rather than in either caller's tests.
+ */
+describe("translating OSM tags into display tags", () => {
+  it("says fenced when the feature is tagged fenced=yes", () => {
+    expect(toSpotTags({ fenced: "yes" }).fenced).toBe(true);
+  });
+
+  it("says not fenced when the feature is tagged fenced=no", () => {
+    expect(toSpotTags({ fenced: "no" }).fenced).toBe(false);
+  });
+
+  it("says fenced when the outline is tagged barrier=fence", () => {
+    expect(toSpotTags({ barrier: "fence" }).fenced).toBe(true);
+  });
+
+  it("says not fenced when the outline is tagged barrier=no", () => {
+    expect(toSpotTags({ barrier: "no" }).fenced).toBe(false);
+  });
+
+  it("prefers fenced over barrier when both are tagged", () => {
+    // fenced is the direct statement about the park; barrier is about one of
+    // its edges, so fenced wins where the two disagree.
+    expect(toSpotTags({ fenced: "yes", barrier: "no" }).fenced).toBe(true);
+  });
+
+  it("says nothing about fencing when neither tag makes a claim", () => {
+    // A bare fence_type is not a claim that the park is enclosed.
+    expect(toSpotTags({ fence_type: "chain_link" }).fenced).toBeUndefined();
+  });
+
+  it("says lit when the feature is tagged lit=yes", () => {
+    expect(toSpotTags({ lit: "yes" }).lit).toBe(true);
+  });
+
+  it("says lit for a lighting schedule, which still means there are lamps", () => {
+    expect(toSpotTags({ lit: "sunset-sunrise" }).lit).toBe(true);
+  });
+
+  it("says not lit only when the feature is tagged lit=no", () => {
+    expect(toSpotTags({ lit: "no" }).lit).toBe(false);
+  });
+
+  it("says nothing about lighting when OSM does not", () => {
+    expect(toSpotTags({}).lit).toBeUndefined();
+  });
+
+  it("passes surface through verbatim", () => {
+    // Free-form by design (docs/spec.md): an enum here would silently drop
+    // surface values nobody has thought of yet.
+    expect(toSpotTags({ surface: "fine_gravel" }).surface).toBe("fine_gravel");
+  });
+
+  it("says nothing at all about an untagged feature", () => {
+    expect(toSpotTags({ leisure: "dog_park" })).toEqual({});
+  });
+});
+
+describe("asDogPark", () => {
+  it("claims the feature as a dog park, unconditionally designated", () => {
+    const spot = asDogPark({ id: "node/1", lat: 59.3, lon: 18.1, tags: {} });
+
+    expect(spot.kind).toBe("dog_park");
+    expect(spot.provenance).toBe("designated");
+  });
+
+  it("never adds a seasonal rule, since a dog park isn't seasonally closed", () => {
+    // asDogPark has no tags to read a dog:conditional off in the first
+    // place — this pins that the dog-park claim can never grow one.
+    const spot = asDogPark({ id: "node/1", lat: 59.3, lon: 18.1, tags: {} });
+
+    expect(spot.seasonal).toBeUndefined();
+  });
+});
+
+describe("asBathingSpot: grading the claim", () => {
+  const skeleton = { id: "way/1", lat: 59.3, lon: 18.1, tags: {} };
+
+  it("grades a dog-designated feature as designated", () => {
+    const spot = asBathingSpot(skeleton, { dog: "designated" });
+
+    expect(spot?.provenance).toBe("designated");
+  });
+
+  it("grades dog=yes as permitted rather than designated", () => {
+    const spot = asBathingSpot(skeleton, { dog: "yes" });
+
+    expect(spot?.provenance).toBe("permitted");
+  });
+
+  it("grades dog=leashed as permitted", () => {
+    // `leashed` can only arrive through the name fallback — the tagged
+    // clauses require yes|designated — but it still says dogs belong here.
+    const spot = asBathingSpot(skeleton, { dog: "leashed" });
+
+    expect(spot?.provenance).toBe("permitted");
+  });
+
+  it("grades dog=unleashed as permitted too", () => {
+    const spot = asBathingSpot(skeleton, { dog: "unleashed" });
+
+    expect(spot?.provenance).toBe("permitted");
+  });
+
+  it("drops a feature whose tags say dogs are banned", () => {
+    // A beach called Hundbadet that bans dogs must never become a pin (§3).
+    const spot = asBathingSpot(skeleton, { dog: "no" });
+
+    expect(spot).toBeUndefined();
+  });
+
+  it("grades an untagged feature as a name match", () => {
+    // No dog tag at all: only the name-fallback candidacy check got it here.
+    const spot = asBathingSpot(skeleton, {});
+
+    expect(spot?.provenance).toBe("name-match");
+  });
+});
+
+describe("asBathingSpot: the seasonal rule", () => {
+  const skeleton = { id: "way/1", lat: 59.3, lon: 18.1, tags: {} };
+
+  it("omits the seasonal field when there is no dog:conditional tag", () => {
+    const spot = asBathingSpot(skeleton, { dog: "designated" });
+
+    expect(spot?.seasonal).toBeUndefined();
+  });
+
+  it("attaches the parsed rule when dog:conditional is present", () => {
+    const spot = asBathingSpot(skeleton, {
+      dog: "yes",
+      "dog:conditional": "no @ (Jun 1-Aug 31)",
+    });
+
+    expect(spot?.seasonal).toEqual({
+      kind: "ban",
+      from: { month: 6, day: 1 },
+      to: { month: 8, day: 31 },
+    });
+  });
+
+  it("keeps a rule it cannot read rather than dropping it", () => {
+    // Something about dogs here is conditional; silently omitting the field
+    // would read as "no restriction", a claim OSM never made.
+    const spot = asBathingSpot(skeleton, {
+      dog: "yes",
+      "dog:conditional": "no @ (Su 10:00-18:00)",
+    });
+
+    expect(spot?.seasonal).toEqual({ kind: "unparsed" });
   });
 });

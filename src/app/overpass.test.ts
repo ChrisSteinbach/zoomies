@@ -280,8 +280,14 @@ describe("reading a captured Overpass response", () => {
   });
 });
 
+// The fenced/lit/surface grading matrix and the provenance/seasonal claim
+// live in osm-tags.test.ts, exercising toSpotTags/asDogPark/asBathingSpot
+// directly. What is left here is a small set proving the provider actually
+// wires those functions to a real Overpass response — plus the mechanics
+// (dedup, position extraction, HTTP/error mapping) that are genuinely
+// Overpass-specific.
 describe("reading the tags of a dog park", () => {
-  it("says fenced when the park is tagged fenced=yes", async () => {
+  it("reads fenced, lit and surface off a park's own tags", async () => {
     const provider = createOverpassProvider({
       fetchImpl: respondingWith({
         elements: [
@@ -290,7 +296,12 @@ describe("reading the tags of a dog park", () => {
             id: 1,
             lat: 59.3,
             lon: 18.1,
-            tags: { leisure: "dog_park", fenced: "yes" },
+            tags: {
+              leisure: "dog_park",
+              fenced: "yes",
+              lit: "yes",
+              surface: "fine_gravel",
+            },
           },
         ],
       }),
@@ -298,38 +309,23 @@ describe("reading the tags of a dog park", () => {
 
     const [spot] = await provider.findDogParks(59.3, 18.1, 3000);
 
-    expect(spot.tags.fenced).toBe(true);
-  });
-
-  it("says fenced when the outline is tagged barrier=fence", async () => {
-    const provider = createOverpassProvider({
-      fetchImpl: respondingWith({
-        elements: [
-          {
-            type: "way",
-            id: 2,
-            center: { lat: 59.3, lon: 18.1 },
-            tags: { leisure: "dog_park", barrier: "fence" },
-          },
-        ],
-      }),
+    expect(spot.tags).toEqual({
+      fenced: true,
+      lit: true,
+      surface: "fine_gravel",
     });
-
-    const [spot] = await provider.findDogParks(59.3, 18.1, 3000);
-
-    expect(spot.tags.fenced).toBe(true);
   });
 
-  it("says not fenced when the park is tagged fenced=no", async () => {
+  it("says nothing at all about an untagged park", async () => {
     const provider = createOverpassProvider({
       fetchImpl: respondingWith({
         elements: [
           {
             type: "node",
-            id: 3,
+            id: 10,
             lat: 59.3,
             lon: 18.1,
-            tags: { leisure: "dog_park", fenced: "no" },
+            tags: { leisure: "dog_park" },
           },
         ],
       }),
@@ -337,127 +333,7 @@ describe("reading the tags of a dog park", () => {
 
     const [spot] = await provider.findDogParks(59.3, 18.1, 3000);
 
-    expect(spot.tags.fenced).toBe(false);
-  });
-
-  it("says not fenced when the outline is tagged barrier=no", async () => {
-    const provider = createOverpassProvider({
-      fetchImpl: respondingWith({
-        elements: [
-          {
-            type: "relation",
-            id: 4,
-            center: { lat: 59.3, lon: 18.1 },
-            tags: { leisure: "dog_park", barrier: "no" },
-          },
-        ],
-      }),
-    });
-
-    const [spot] = await provider.findDogParks(59.3, 18.1, 3000);
-
-    expect(spot.tags.fenced).toBe(false);
-  });
-
-  it("says nothing about fencing when OSM does not", async () => {
-    const provider = createOverpassProvider({
-      fetchImpl: respondingWith({
-        elements: [
-          {
-            type: "node",
-            id: 5,
-            lat: 59.3,
-            lon: 18.1,
-            // A bare fence_type, which happens in Stockholm, is not a claim
-            // that the park is enclosed.
-            tags: { leisure: "dog_park", fence_type: "chain_link" },
-          },
-        ],
-      }),
-    });
-
-    const [spot] = await provider.findDogParks(59.3, 18.1, 3000);
-
-    expect(spot.tags.fenced).toBeUndefined();
-  });
-
-  it("says lit when the park is tagged lit=yes", async () => {
-    const provider = createOverpassProvider({
-      fetchImpl: respondingWith({
-        elements: [
-          {
-            type: "node",
-            id: 6,
-            lat: 59.3,
-            lon: 18.1,
-            tags: { leisure: "dog_park", lit: "yes" },
-          },
-        ],
-      }),
-    });
-
-    const [spot] = await provider.findDogParks(59.3, 18.1, 3000);
-
-    expect(spot.tags.lit).toBe(true);
-  });
-
-  it("says lit for a lighting schedule, which still means there are lamps", async () => {
-    const provider = createOverpassProvider({
-      fetchImpl: respondingWith({
-        elements: [
-          {
-            type: "node",
-            id: 7,
-            lat: 59.3,
-            lon: 18.1,
-            tags: { leisure: "dog_park", lit: "sunset-sunrise" },
-          },
-        ],
-      }),
-    });
-
-    const [spot] = await provider.findDogParks(59.3, 18.1, 3000);
-
-    expect(spot.tags.lit).toBe(true);
-  });
-
-  it("says not lit only when the park is tagged lit=no", async () => {
-    const provider = createOverpassProvider({
-      fetchImpl: respondingWith({
-        elements: [
-          {
-            type: "node",
-            id: 8,
-            lat: 59.3,
-            lon: 18.1,
-            tags: { leisure: "dog_park", lit: "no" },
-          },
-        ],
-      }),
-    });
-
-    const [spot] = await provider.findDogParks(59.3, 18.1, 3000);
-
-    expect(spot.tags.lit).toBe(false);
-  });
-
-  it("passes the surface through as OSM wrote it", async () => {
-    const provider = createOverpassProvider({
-      fetchImpl: respondingWith({
-        elements: [
-          {
-            type: "way",
-            id: 9,
-            center: { lat: 59.3, lon: 18.1 },
-            tags: { leisure: "dog_park", surface: "fine_gravel" },
-          },
-        ],
-      }),
-    });
-
-    const [spot] = await provider.findDogParks(59.3, 18.1, 3000);
-
-    expect(spot.tags.surface).toBe("fine_gravel");
+    expect(spot.tags).toEqual({});
   });
 
   it("says nothing about a season, whatever a park's conditional tag says", async () => {
@@ -480,26 +356,6 @@ describe("reading the tags of a dog park", () => {
     // The tag describes a beach ban season; a dog park is not seasonally
     // closed to dogs, and reading it here would invent a caveat.
     expect(spot.seasonal).toBeUndefined();
-  });
-
-  it("says nothing at all about an untagged park", async () => {
-    const provider = createOverpassProvider({
-      fetchImpl: respondingWith({
-        elements: [
-          {
-            type: "node",
-            id: 10,
-            lat: 59.3,
-            lon: 18.1,
-            tags: { leisure: "dog_park" },
-          },
-        ],
-      }),
-    });
-
-    const [spot] = await provider.findDogParks(59.3, 18.1, 3000);
-
-    expect(spot.tags).toEqual({});
   });
 });
 
@@ -526,70 +382,6 @@ describe("reading a bathing spot", () => {
 
     expect(spot.kind).toBe("bathing_spot");
     expect(spot.provenance).toBe("designated");
-  });
-
-  it("reports a bathing place that merely allows dogs as permitting them", async () => {
-    const provider = createOverpassProvider({
-      fetchImpl: respondingWith({
-        elements: [
-          {
-            type: "node",
-            id: 21,
-            lat: 59.31,
-            lon: 17.92,
-            tags: { leisure: "bathing_place", dog: "yes" },
-          },
-        ],
-      }),
-    });
-
-    const [spot] = await provider.findBathingSpots(59.31, 17.92, 3000);
-
-    expect(spot.provenance).toBe("permitted");
-  });
-
-  it("reports a leashed-dogs beach as permitting them too", async () => {
-    const provider = createOverpassProvider({
-      fetchImpl: respondingWith({
-        elements: [
-          {
-            type: "node",
-            id: 22,
-            lat: 59.31,
-            lon: 17.92,
-            // `leashed` can only reach us through the name clause, since the
-            // tagged clauses match yes|designated — but it still says dogs
-            // belong here.
-            tags: { natural: "beach", dog: "leashed", name: "Hundbadet" },
-          },
-        ],
-      }),
-    });
-
-    const [spot] = await provider.findBathingSpots(59.31, 17.92, 3000);
-
-    expect(spot.provenance).toBe("permitted");
-  });
-
-  it("reports a feature found only by its name as exactly that", async () => {
-    const provider = createOverpassProvider({
-      fetchImpl: respondingWith({
-        elements: [
-          {
-            type: "way",
-            id: 23,
-            center: { lat: 59.31, lon: 17.92 },
-            // No dog tag at all: the Sweden-specific fallback found it, and
-            // the word in the name is the only reason it is here.
-            tags: { natural: "beach", name: "Ekerö Hundbad" },
-          },
-        ],
-      }),
-    });
-
-    const [spot] = await provider.findBathingSpots(59.31, 17.92, 3000);
-
-    expect(spot.provenance).toBe("name-match");
   });
 
   it("leaves out a place whose name says hundbad but whose tags say no dogs", async () => {
@@ -663,8 +455,11 @@ describe("reading a bathing spot", () => {
   });
 });
 
+// The seasonal-rule parsing matrix belongs to dog-conditional.test.ts; this
+// is a single wiring check that a conditional tag on the wire reaches
+// spot.seasonal at all.
 describe("when a bathing spot is only seasonally open to dogs", () => {
-  it("reads the months a beach bans dogs", async () => {
+  it("reads a conditional ban through to the spot Overpass returns", async () => {
     const provider = createOverpassProvider({
       fetchImpl: respondingWith({
         elements: [
@@ -691,54 +486,6 @@ describe("when a bathing spot is only seasonally open to dogs", () => {
       from: { month: 6, day: 1 },
       to: { month: 8, day: 31 },
     });
-  });
-
-  it("keeps a rule it cannot read rather than dropping it", async () => {
-    const provider = createOverpassProvider({
-      fetchImpl: respondingWith({
-        elements: [
-          {
-            type: "node",
-            id: 31,
-            lat: 59.31,
-            lon: 17.92,
-            tags: {
-              natural: "beach",
-              dog: "yes",
-              "dog:conditional": "no @ (Su 10:00-18:00)",
-            },
-          },
-        ],
-      }),
-    });
-
-    const [spot] = await provider.findBathingSpots(59.31, 17.92, 3000);
-
-    // Something about dogs here is conditional. Silently dropping that would
-    // read as "no restriction", which is a claim OSM never made.
-    expect(spot.seasonal).toEqual({ kind: "unparsed" });
-  });
-
-  it("says nothing about seasons when OSM does not", async () => {
-    const provider = createOverpassProvider({
-      fetchImpl: respondingWith({
-        elements: [
-          {
-            type: "node",
-            id: 32,
-            lat: 59.31,
-            lon: 17.92,
-            tags: { natural: "beach", dog: "designated" },
-          },
-        ],
-      }),
-    });
-
-    const [spot] = await provider.findBathingSpots(59.31, 17.92, 3000);
-
-    // Absent, not "no restriction" — the UI's verify-signage caveat covers
-    // every bathing spot regardless (§4.5.3).
-    expect(spot.seasonal).toBeUndefined();
   });
 });
 
