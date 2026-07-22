@@ -8,6 +8,7 @@
 //
 // jsdom lays nothing out, so nothing here asserts on geometry.
 
+import "./test-dialog-polyfill";
 import { composeApp } from "./compose-app";
 import type { AppDeps } from "./compose-app";
 import type { ExpandingSearchResult } from "./expanding-search";
@@ -268,6 +269,79 @@ describe("cancelling the picker", () => {
   });
 });
 
+describe("switching between GPS and a picked position", () => {
+  it("offers the picker from the results and searches where the user picks", async () => {
+    const { root, gps, search, picker } = mount();
+
+    gps.fix(TANTOLUNDEN);
+    await search.answer([TANTO]);
+
+    root.querySelector<HTMLButtonElement>(".mode-toggle-pick")!.click();
+    expect(picker.isOpen).toBe(true);
+
+    picker.pick(FAR_ENOUGH);
+    await search.answer([DRAKEN]);
+
+    expect(parkNames(root)).toEqual(["Drakenbergsparkens hundrastgård"]);
+    expect(
+      root.querySelector(".mode-toggle-pick")?.getAttribute("aria-pressed"),
+    ).toBe("true");
+  });
+
+  it("follows the device again when the GPS side is tapped after a pick", async () => {
+    const { root, gps, search, picker } = mount();
+
+    gps.fix(TANTOLUNDEN);
+    await search.answer([TANTO]);
+    root.querySelector<HTMLButtonElement>(".mode-toggle-pick")!.click();
+    picker.pick(FAR_ENOUGH);
+    await search.answer([DRAKEN]);
+    expect(gps.stop).toHaveBeenCalled();
+
+    root.querySelector<HTMLButtonElement>(".mode-toggle-gps")!.click();
+
+    // Waiting for the fix, and saying so; the picked results are still there.
+    expect(
+      root.querySelector(".mode-toggle-gps")?.getAttribute("aria-busy"),
+    ).toBe("true");
+    expect(parkNames(root)).toEqual(["Drakenbergsparkens hundrastgård"]);
+
+    // The restarted watcher delivers a fix far from the picked spot, so the
+    // app asks again from where the user really is.
+    gps.fix(TANTOLUNDEN);
+    expect(search.calls).toBe(3);
+    await search.answer([TANTO]);
+
+    expect(parkNames(root)).toEqual(["Tantolundens hundrastgård"]);
+    expect(
+      root.querySelector(".mode-toggle-gps")?.getAttribute("aria-pressed"),
+    ).toBe("true");
+  });
+
+  it("settles back on the picked spot when the device still cannot say", async () => {
+    const { root, gps, search, picker } = mount();
+
+    gps.fix(TANTOLUNDEN);
+    await search.answer([TANTO]);
+    root.querySelector<HTMLButtonElement>(".mode-toggle-pick")!.click();
+    picker.pick(FAR_ENOUGH);
+    await search.answer([DRAKEN]);
+
+    root.querySelector<HTMLButtonElement>(".mode-toggle-gps")!.click();
+    gps.fail("POSITION_UNAVAILABLE");
+
+    // The resume gave up: the hand-picked position stands, the toggle says
+    // so, and the results it produced were never blanked.
+    expect(
+      root.querySelector(".mode-toggle-pick")?.getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(
+      root.querySelector(".mode-toggle-gps")?.getAttribute("aria-busy"),
+    ).toBe("false");
+    expect(parkNames(root)).toEqual(["Drakenbergsparkens hundrastgård"]);
+  });
+});
+
 describe("while the user walks", () => {
   it("keeps the results and re-measures for a small step", async () => {
     const { root, gps, search } = mount();
@@ -487,6 +561,30 @@ describe("the bathing layer, wired", () => {
     expect(openUrl).toHaveBeenCalledWith(
       expect.stringContaining(`${HUNDBADET.lat},${HUNDBADET.lon}`),
     );
+  });
+});
+
+describe("the about dialog, wired", () => {
+  it("is reachable before the app knows anything at all", () => {
+    const { root } = mount();
+
+    // The ⓘ is furniture, not state: it is there in `locating`, in the
+    // permission dead end, and everywhere else.
+    expect(root.querySelector(".about-btn")).not.toBeNull();
+  });
+
+  it("opens from the top bar and closes with the app", () => {
+    const { app, root } = mount();
+
+    root.querySelector<HTMLButtonElement>(".about-btn")!.click();
+
+    const dialog = document.querySelector("dialog.about-dialog");
+    expect(dialog?.textContent).toContain("© OpenStreetMap contributors");
+
+    // The dialog lives on document.body, outside the root the app clears —
+    // destroy() has to take it down deliberately.
+    app.destroy();
+    expect(document.querySelector("dialog.about-dialog")).toBeNull();
   });
 });
 
