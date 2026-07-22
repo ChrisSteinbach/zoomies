@@ -11,20 +11,13 @@ import "leaflet/dist/leaflet.css";
 import "./map-picker.css";
 import type { LatLon } from "./types";
 import { worldZoomBounds } from "./map-bounds";
+import { OSM_TILE_ATTRIBUTION } from "./attribution";
+import { locationPinIcon } from "./map-icons";
 import { createPlaceSearch } from "./place-search";
 import { searchPlaces } from "./nominatim";
 import type { PlaceMatch } from "./nominatim";
 
 const OSM_TILE_URL = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
-
-/**
- * Required, not decorative. The tiles are OpenStreetMap's, and ODbL asks for
- * visible credit wherever they are shown (docs/spec.md §4.1) — the same
- * obligation the place data carries. Leaflet renders this in the map corner;
- * do not remove it to tidy a layout.
- */
-const OSM_ATTRIBUTION =
-  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 
 /** OSM's raster tiles stop here; asking for more just yields grey squares. */
 const OSM_MAX_ZOOM = 19;
@@ -46,25 +39,10 @@ const SEARCH_RESULT_ZOOM = 14;
 const PROMPT_LABEL = "Tap the map to choose a spot";
 const CONFIRM_LABEL = "Use this location";
 
-/**
- * The dropped-pin marker, drawn inline as a data URI rather than loaded from
- * `leaflet/dist/images`. Leaflet resolves its default marker images relative
- * to wherever its stylesheet ended up, which is exactly the sort of thing that
- * survives `npm run dev` and then 404s in a hashed production build.
- */
-const PIN_SVG =
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 34">' +
-  '<path d="M12 0C5.37 0 0 5.37 0 12c0 9 12 22 12 22s12-13 12-22C24 5.37 18.63 0 12 0z" fill="#c0392b"/>' +
-  '<circle cx="12" cy="12" r="4.5" fill="#fff"/></svg>';
-
-const PIN_SIZE: [number, number] = [24, 34];
-
-const pinIcon = L.icon({
-  iconUrl: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(PIN_SVG)}`,
-  iconSize: PIN_SIZE,
-  // The point of the teardrop is the spot, so anchor the bottom centre.
-  iconAnchor: [PIN_SIZE[0] / 2, PIN_SIZE[1]],
-});
+/** The dropped-pin marker: the shared red pin (map-icons.ts), the same one
+ *  the results map stands on the user — a chosen spot and a current position
+ *  are the same kind of thing to the rest of the app. */
+const pinIcon = locationPinIcon();
 
 export interface MapPickerOptions {
   /**
@@ -144,7 +122,11 @@ export function createMapPicker(
   );
 
   L.tileLayer(OSM_TILE_URL, {
-    attribution: OSM_ATTRIBUTION,
+    // The tiles are OpenStreetMap's and ODbL asks for visible credit wherever
+    // they are drawn (docs/spec.md §4.1). Leaflet renders this in the map
+    // corner; the one string for it lives in attribution.ts, shared with the
+    // results map. Do not remove it to tidy a layout.
+    attribution: OSM_TILE_ATTRIBUTION,
     maxZoom: OSM_MAX_ZOOM,
     ...worldBounds.tileOptions,
   }).addTo(map);
