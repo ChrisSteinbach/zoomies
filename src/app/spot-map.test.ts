@@ -378,6 +378,42 @@ describe("createSpotMap", () => {
     map.destroy();
   });
 
+  it("frames the map on the results after the first render", () => {
+    const container = mount();
+    const map = createSpotMap(container, { onSelect: vi.fn() });
+
+    map.render([BJORNS], SLUSSEN, null);
+
+    // BJORNS is a few hundred metres from SLUSSEN — framed to the results,
+    // that is a wide, visible gap on screen. Left at the opening world view
+    // (WORLD_CENTRE/WORLD_ZOOM, both far too zoomed out to tell them apart),
+    // the two markers would land on the same pixel.
+    const you = youAreHere(container)[0];
+    const pin = pinNamed(container, BJORNS.name!);
+    const dx = parseFloat(you.style.left) - parseFloat(pin.style.left);
+    const dy = parseFloat(you.style.top) - parseFloat(pin.style.top);
+    expect(Math.hypot(dx, dy)).toBeGreaterThan(50);
+
+    map.destroy();
+  });
+
+  it("centres on the user when there are no results to frame", () => {
+    const container = mount();
+    const map = createSpotMap(container, { onSelect: vi.fn() });
+
+    map.render([], SLUSSEN, null);
+
+    // Centred on the user, the you-are-here marker lands exactly on the
+    // container's midpoint (390×640, stubbed above) at any zoom, because its
+    // own coordinates are the view's centre. Left at the opening world view,
+    // SLUSSEN is nowhere near WORLD_CENTRE and the marker lands far off it.
+    const you = youAreHere(container)[0];
+    expect(you.style.left).toBe("195px");
+    expect(you.style.top).toBe("320px");
+
+    map.destroy();
+  });
+
   it("follows the user without dragging the map along", () => {
     const container = mount();
     const map = createSpotMap(container, { onSelect: vi.fn() });
