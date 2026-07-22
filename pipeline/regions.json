@@ -1,0 +1,1081 @@
+{
+  "generated": "2026-07-22",
+  "note": "Geofabrik extracts tiling the planet with no file over 5 GB, so any one fits a stock GitHub runner disk. Regenerate by HEADing (Content-Length, with a descriptive User-Agent) each top-level region in https://download.geofabrik.de/index-v1.json and descending into a region's children while its file exceeds 5 GB, skipping the combination extracts that duplicate sibling coverage: alps, dach, britain-and-ireland, united-kingdom, south-africa-and-lesotho, sea, us-midwest, us-northeast, us-pacific, us-south, us-west. approxBytes is the Content-Length observed on the generated date.",
+  "regions": [
+    {
+      "id": "afghanistan",
+      "pbf": "https://download.geofabrik.de/asia/afghanistan-latest.osm.pbf",
+      "approxBytes": 112252501
+    },
+    {
+      "id": "albania",
+      "pbf": "https://download.geofabrik.de/europe/albania-latest.osm.pbf",
+      "approxBytes": 53741971
+    },
+    {
+      "id": "alberta",
+      "pbf": "https://download.geofabrik.de/north-america/canada/alberta-latest.osm.pbf",
+      "approxBytes": 345934567
+    },
+    {
+      "id": "algeria",
+      "pbf": "https://download.geofabrik.de/africa/algeria-latest.osm.pbf",
+      "approxBytes": 298917758
+    },
+    {
+      "id": "andorra",
+      "pbf": "https://download.geofabrik.de/europe/andorra-latest.osm.pbf",
+      "approxBytes": 3423960
+    },
+    {
+      "id": "angola",
+      "pbf": "https://download.geofabrik.de/africa/angola-latest.osm.pbf",
+      "approxBytes": 84866307
+    },
+    {
+      "id": "antarctica",
+      "pbf": "https://download.geofabrik.de/antarctica-latest.osm.pbf",
+      "approxBytes": 33090976
+    },
+    {
+      "id": "armenia",
+      "pbf": "https://download.geofabrik.de/asia/armenia-latest.osm.pbf",
+      "approxBytes": 52761397
+    },
+    {
+      "id": "australia-oceania",
+      "pbf": "https://download.geofabrik.de/australia-oceania-latest.osm.pbf",
+      "approxBytes": 1550735562
+    },
+    {
+      "id": "austria",
+      "pbf": "https://download.geofabrik.de/europe/austria-latest.osm.pbf",
+      "approxBytes": 804943719
+    },
+    {
+      "id": "azerbaijan",
+      "pbf": "https://download.geofabrik.de/asia/azerbaijan-latest.osm.pbf",
+      "approxBytes": 45512783
+    },
+    {
+      "id": "azores",
+      "pbf": "https://download.geofabrik.de/europe/azores-latest.osm.pbf",
+      "approxBytes": 17589221
+    },
+    {
+      "id": "bangladesh",
+      "pbf": "https://download.geofabrik.de/asia/bangladesh-latest.osm.pbf",
+      "approxBytes": 349375026
+    },
+    {
+      "id": "belarus",
+      "pbf": "https://download.geofabrik.de/europe/belarus-latest.osm.pbf",
+      "approxBytes": 346743818
+    },
+    {
+      "id": "belgium",
+      "pbf": "https://download.geofabrik.de/europe/belgium-latest.osm.pbf",
+      "approxBytes": 690052246
+    },
+    {
+      "id": "benin",
+      "pbf": "https://download.geofabrik.de/africa/benin-latest.osm.pbf",
+      "approxBytes": 47851099
+    },
+    {
+      "id": "bhutan",
+      "pbf": "https://download.geofabrik.de/asia/bhutan-latest.osm.pbf",
+      "approxBytes": 23577296
+    },
+    {
+      "id": "bosnia-herzegovina",
+      "pbf": "https://download.geofabrik.de/europe/bosnia-herzegovina-latest.osm.pbf",
+      "approxBytes": 159379276
+    },
+    {
+      "id": "botswana",
+      "pbf": "https://download.geofabrik.de/africa/botswana-latest.osm.pbf",
+      "approxBytes": 87886682
+    },
+    {
+      "id": "british-columbia",
+      "pbf": "https://download.geofabrik.de/north-america/canada/british-columbia-latest.osm.pbf",
+      "approxBytes": 1242935913
+    },
+    {
+      "id": "bulgaria",
+      "pbf": "https://download.geofabrik.de/europe/bulgaria-latest.osm.pbf",
+      "approxBytes": 169938077
+    },
+    {
+      "id": "burkina-faso",
+      "pbf": "https://download.geofabrik.de/africa/burkina-faso-latest.osm.pbf",
+      "approxBytes": 84416656
+    },
+    {
+      "id": "burundi",
+      "pbf": "https://download.geofabrik.de/africa/burundi-latest.osm.pbf",
+      "approxBytes": 46189843
+    },
+    {
+      "id": "cambodia",
+      "pbf": "https://download.geofabrik.de/asia/cambodia-latest.osm.pbf",
+      "approxBytes": 40237026
+    },
+    {
+      "id": "cameroon",
+      "pbf": "https://download.geofabrik.de/africa/cameroon-latest.osm.pbf",
+      "approxBytes": 222958382
+    },
+    {
+      "id": "canary-islands",
+      "pbf": "https://download.geofabrik.de/africa/canary-islands-latest.osm.pbf",
+      "approxBytes": 59557611
+    },
+    {
+      "id": "cape-verde",
+      "pbf": "https://download.geofabrik.de/africa/cape-verde-latest.osm.pbf",
+      "approxBytes": 11676326
+    },
+    {
+      "id": "central-african-republic",
+      "pbf": "https://download.geofabrik.de/africa/central-african-republic-latest.osm.pbf",
+      "approxBytes": 99354136
+    },
+    {
+      "id": "central-america",
+      "pbf": "https://download.geofabrik.de/central-america-latest.osm.pbf",
+      "approxBytes": 781073591
+    },
+    {
+      "id": "chad",
+      "pbf": "https://download.geofabrik.de/africa/chad-latest.osm.pbf",
+      "approxBytes": 134567137
+    },
+    {
+      "id": "china",
+      "pbf": "https://download.geofabrik.de/asia/china-latest.osm.pbf",
+      "approxBytes": 1564759988
+    },
+    {
+      "id": "comores",
+      "pbf": "https://download.geofabrik.de/africa/comores-latest.osm.pbf",
+      "approxBytes": 3974879
+    },
+    {
+      "id": "congo-brazzaville",
+      "pbf": "https://download.geofabrik.de/africa/congo-brazzaville-latest.osm.pbf",
+      "approxBytes": 32334497
+    },
+    {
+      "id": "congo-democratic-republic",
+      "pbf": "https://download.geofabrik.de/africa/congo-democratic-republic-latest.osm.pbf",
+      "approxBytes": 414133351
+    },
+    {
+      "id": "croatia",
+      "pbf": "https://download.geofabrik.de/europe/croatia-latest.osm.pbf",
+      "approxBytes": 197607332
+    },
+    {
+      "id": "cyprus",
+      "pbf": "https://download.geofabrik.de/europe/cyprus-latest.osm.pbf",
+      "approxBytes": 36809208
+    },
+    {
+      "id": "czech-republic",
+      "pbf": "https://download.geofabrik.de/europe/czech-republic-latest.osm.pbf",
+      "approxBytes": 940489804
+    },
+    {
+      "id": "denmark",
+      "pbf": "https://download.geofabrik.de/europe/denmark-latest.osm.pbf",
+      "approxBytes": 491465061
+    },
+    {
+      "id": "djibouti",
+      "pbf": "https://download.geofabrik.de/africa/djibouti-latest.osm.pbf",
+      "approxBytes": 7001302
+    },
+    {
+      "id": "east-timor",
+      "pbf": "https://download.geofabrik.de/asia/east-timor-latest.osm.pbf",
+      "approxBytes": 17762357
+    },
+    {
+      "id": "egypt",
+      "pbf": "https://download.geofabrik.de/africa/egypt-latest.osm.pbf",
+      "approxBytes": 177510857
+    },
+    {
+      "id": "equatorial-guinea",
+      "pbf": "https://download.geofabrik.de/africa/equatorial-guinea-latest.osm.pbf",
+      "approxBytes": 6522100
+    },
+    {
+      "id": "eritrea",
+      "pbf": "https://download.geofabrik.de/africa/eritrea-latest.osm.pbf",
+      "approxBytes": 31011318
+    },
+    {
+      "id": "estonia",
+      "pbf": "https://download.geofabrik.de/europe/estonia-latest.osm.pbf",
+      "approxBytes": 121616369
+    },
+    {
+      "id": "ethiopia",
+      "pbf": "https://download.geofabrik.de/africa/ethiopia-latest.osm.pbf",
+      "approxBytes": 138900769
+    },
+    {
+      "id": "faroe-islands",
+      "pbf": "https://download.geofabrik.de/europe/faroe-islands-latest.osm.pbf",
+      "approxBytes": 7719773
+    },
+    {
+      "id": "finland",
+      "pbf": "https://download.geofabrik.de/europe/finland-latest.osm.pbf",
+      "approxBytes": 729646661
+    },
+    {
+      "id": "france",
+      "pbf": "https://download.geofabrik.de/europe/france-latest.osm.pbf",
+      "approxBytes": 5046409366
+    },
+    {
+      "id": "gabon",
+      "pbf": "https://download.geofabrik.de/africa/gabon-latest.osm.pbf",
+      "approxBytes": 25350827
+    },
+    {
+      "id": "gcc-states",
+      "pbf": "https://download.geofabrik.de/asia/gcc-states-latest.osm.pbf",
+      "approxBytes": 251755014
+    },
+    {
+      "id": "georgia",
+      "pbf": "https://download.geofabrik.de/europe/georgia-latest.osm.pbf",
+      "approxBytes": 100199290
+    },
+    {
+      "id": "germany",
+      "pbf": "https://download.geofabrik.de/europe/germany-latest.osm.pbf",
+      "approxBytes": 4803646336
+    },
+    {
+      "id": "ghana",
+      "pbf": "https://download.geofabrik.de/africa/ghana-latest.osm.pbf",
+      "approxBytes": 113056522
+    },
+    {
+      "id": "great-britain",
+      "pbf": "https://download.geofabrik.de/europe/great-britain-latest.osm.pbf",
+      "approxBytes": 2149328162
+    },
+    {
+      "id": "greece",
+      "pbf": "https://download.geofabrik.de/europe/greece-latest.osm.pbf",
+      "approxBytes": 338436078
+    },
+    {
+      "id": "greenland",
+      "pbf": "https://download.geofabrik.de/north-america/greenland-latest.osm.pbf",
+      "approxBytes": 25625865
+    },
+    {
+      "id": "guernsey-jersey",
+      "pbf": "https://download.geofabrik.de/europe/guernsey-jersey-latest.osm.pbf",
+      "approxBytes": 3879426
+    },
+    {
+      "id": "guinea",
+      "pbf": "https://download.geofabrik.de/africa/guinea-latest.osm.pbf",
+      "approxBytes": 117238261
+    },
+    {
+      "id": "guinea-bissau",
+      "pbf": "https://download.geofabrik.de/africa/guinea-bissau-latest.osm.pbf",
+      "approxBytes": 11146173
+    },
+    {
+      "id": "hungary",
+      "pbf": "https://download.geofabrik.de/europe/hungary-latest.osm.pbf",
+      "approxBytes": 320530607
+    },
+    {
+      "id": "iceland",
+      "pbf": "https://download.geofabrik.de/europe/iceland-latest.osm.pbf",
+      "approxBytes": 64435948
+    },
+    {
+      "id": "india",
+      "pbf": "https://download.geofabrik.de/asia/india-latest.osm.pbf",
+      "approxBytes": 1697271711
+    },
+    {
+      "id": "indonesia",
+      "pbf": "https://download.geofabrik.de/asia/indonesia-latest.osm.pbf",
+      "approxBytes": 1728516073
+    },
+    {
+      "id": "iran",
+      "pbf": "https://download.geofabrik.de/asia/iran-latest.osm.pbf",
+      "approxBytes": 228237778
+    },
+    {
+      "id": "iraq",
+      "pbf": "https://download.geofabrik.de/asia/iraq-latest.osm.pbf",
+      "approxBytes": 89835213
+    },
+    {
+      "id": "ireland-and-northern-ireland",
+      "pbf": "https://download.geofabrik.de/europe/ireland-and-northern-ireland-latest.osm.pbf",
+      "approxBytes": 407670677
+    },
+    {
+      "id": "isle-of-man",
+      "pbf": "https://download.geofabrik.de/europe/isle-of-man-latest.osm.pbf",
+      "approxBytes": 6007843
+    },
+    {
+      "id": "israel-and-palestine",
+      "pbf": "https://download.geofabrik.de/asia/israel-and-palestine-latest.osm.pbf",
+      "approxBytes": 120480063
+    },
+    {
+      "id": "italy",
+      "pbf": "https://download.geofabrik.de/europe/italy-latest.osm.pbf",
+      "approxBytes": 2212621398
+    },
+    {
+      "id": "ivory-coast",
+      "pbf": "https://download.geofabrik.de/africa/ivory-coast-latest.osm.pbf",
+      "approxBytes": 85290105
+    },
+    {
+      "id": "japan",
+      "pbf": "https://download.geofabrik.de/asia/japan-latest.osm.pbf",
+      "approxBytes": 2469868213
+    },
+    {
+      "id": "jordan",
+      "pbf": "https://download.geofabrik.de/asia/jordan-latest.osm.pbf",
+      "approxBytes": 30997295
+    },
+    {
+      "id": "kazakhstan",
+      "pbf": "https://download.geofabrik.de/asia/kazakhstan-latest.osm.pbf",
+      "approxBytes": 219322798
+    },
+    {
+      "id": "kenya",
+      "pbf": "https://download.geofabrik.de/africa/kenya-latest.osm.pbf",
+      "approxBytes": 348639499
+    },
+    {
+      "id": "kosovo",
+      "pbf": "https://download.geofabrik.de/europe/kosovo-latest.osm.pbf",
+      "approxBytes": 30579247
+    },
+    {
+      "id": "kyrgyzstan",
+      "pbf": "https://download.geofabrik.de/asia/kyrgyzstan-latest.osm.pbf",
+      "approxBytes": 52599637
+    },
+    {
+      "id": "laos",
+      "pbf": "https://download.geofabrik.de/asia/laos-latest.osm.pbf",
+      "approxBytes": 53197127
+    },
+    {
+      "id": "latvia",
+      "pbf": "https://download.geofabrik.de/europe/latvia-latest.osm.pbf",
+      "approxBytes": 138938960
+    },
+    {
+      "id": "lebanon",
+      "pbf": "https://download.geofabrik.de/asia/lebanon-latest.osm.pbf",
+      "approxBytes": 52236961
+    },
+    {
+      "id": "lesotho",
+      "pbf": "https://download.geofabrik.de/africa/lesotho-latest.osm.pbf",
+      "approxBytes": 126336589
+    },
+    {
+      "id": "liberia",
+      "pbf": "https://download.geofabrik.de/africa/liberia-latest.osm.pbf",
+      "approxBytes": 37226629
+    },
+    {
+      "id": "libya",
+      "pbf": "https://download.geofabrik.de/africa/libya-latest.osm.pbf",
+      "approxBytes": 76344554
+    },
+    {
+      "id": "liechtenstein",
+      "pbf": "https://download.geofabrik.de/europe/liechtenstein-latest.osm.pbf",
+      "approxBytes": 3423285
+    },
+    {
+      "id": "lithuania",
+      "pbf": "https://download.geofabrik.de/europe/lithuania-latest.osm.pbf",
+      "approxBytes": 221583945
+    },
+    {
+      "id": "luxembourg",
+      "pbf": "https://download.geofabrik.de/europe/luxembourg-latest.osm.pbf",
+      "approxBytes": 47193148
+    },
+    {
+      "id": "macedonia",
+      "pbf": "https://download.geofabrik.de/europe/macedonia-latest.osm.pbf",
+      "approxBytes": 29444098
+    },
+    {
+      "id": "madagascar",
+      "pbf": "https://download.geofabrik.de/africa/madagascar-latest.osm.pbf",
+      "approxBytes": 386453861
+    },
+    {
+      "id": "malawi",
+      "pbf": "https://download.geofabrik.de/africa/malawi-latest.osm.pbf",
+      "approxBytes": 154324915
+    },
+    {
+      "id": "malaysia-singapore-brunei",
+      "pbf": "https://download.geofabrik.de/asia/malaysia-singapore-brunei-latest.osm.pbf",
+      "approxBytes": 248639740
+    },
+    {
+      "id": "maldives",
+      "pbf": "https://download.geofabrik.de/asia/maldives-latest.osm.pbf",
+      "approxBytes": 3577441
+    },
+    {
+      "id": "mali",
+      "pbf": "https://download.geofabrik.de/africa/mali-latest.osm.pbf",
+      "approxBytes": 172699764
+    },
+    {
+      "id": "malta",
+      "pbf": "https://download.geofabrik.de/europe/malta-latest.osm.pbf",
+      "approxBytes": 8823046
+    },
+    {
+      "id": "manitoba",
+      "pbf": "https://download.geofabrik.de/north-america/canada/manitoba-latest.osm.pbf",
+      "approxBytes": 206189024
+    },
+    {
+      "id": "mauritania",
+      "pbf": "https://download.geofabrik.de/africa/mauritania-latest.osm.pbf",
+      "approxBytes": 30401108
+    },
+    {
+      "id": "mauritius",
+      "pbf": "https://download.geofabrik.de/africa/mauritius-latest.osm.pbf",
+      "approxBytes": 9494636
+    },
+    {
+      "id": "mexico",
+      "pbf": "https://download.geofabrik.de/north-america/mexico-latest.osm.pbf",
+      "approxBytes": 636016404
+    },
+    {
+      "id": "moldova",
+      "pbf": "https://download.geofabrik.de/europe/moldova-latest.osm.pbf",
+      "approxBytes": 100282343
+    },
+    {
+      "id": "monaco",
+      "pbf": "https://download.geofabrik.de/europe/monaco-latest.osm.pbf",
+      "approxBytes": 686089
+    },
+    {
+      "id": "mongolia",
+      "pbf": "https://download.geofabrik.de/asia/mongolia-latest.osm.pbf",
+      "approxBytes": 61803173
+    },
+    {
+      "id": "montenegro",
+      "pbf": "https://download.geofabrik.de/europe/montenegro-latest.osm.pbf",
+      "approxBytes": 33943398
+    },
+    {
+      "id": "morocco",
+      "pbf": "https://download.geofabrik.de/africa/morocco-latest.osm.pbf",
+      "approxBytes": 242986065
+    },
+    {
+      "id": "mozambique",
+      "pbf": "https://download.geofabrik.de/africa/mozambique-latest.osm.pbf",
+      "approxBytes": 254525794
+    },
+    {
+      "id": "myanmar",
+      "pbf": "https://download.geofabrik.de/asia/myanmar-latest.osm.pbf",
+      "approxBytes": 274738003
+    },
+    {
+      "id": "namibia",
+      "pbf": "https://download.geofabrik.de/africa/namibia-latest.osm.pbf",
+      "approxBytes": 54087824
+    },
+    {
+      "id": "nepal",
+      "pbf": "https://download.geofabrik.de/asia/nepal-latest.osm.pbf",
+      "approxBytes": 411596255
+    },
+    {
+      "id": "netherlands",
+      "pbf": "https://download.geofabrik.de/europe/netherlands-latest.osm.pbf",
+      "approxBytes": 1393656622
+    },
+    {
+      "id": "new-brunswick",
+      "pbf": "https://download.geofabrik.de/north-america/canada/new-brunswick-latest.osm.pbf",
+      "approxBytes": 66204150
+    },
+    {
+      "id": "newfoundland-and-labrador",
+      "pbf": "https://download.geofabrik.de/north-america/canada/newfoundland-and-labrador-latest.osm.pbf",
+      "approxBytes": 259088740
+    },
+    {
+      "id": "niger",
+      "pbf": "https://download.geofabrik.de/africa/niger-latest.osm.pbf",
+      "approxBytes": 75890968
+    },
+    {
+      "id": "nigeria",
+      "pbf": "https://download.geofabrik.de/africa/nigeria-latest.osm.pbf",
+      "approxBytes": 711767708
+    },
+    {
+      "id": "north-korea",
+      "pbf": "https://download.geofabrik.de/asia/north-korea-latest.osm.pbf",
+      "approxBytes": 91078476
+    },
+    {
+      "id": "northwest-territories",
+      "pbf": "https://download.geofabrik.de/north-america/canada/northwest-territories-latest.osm.pbf",
+      "approxBytes": 425548088
+    },
+    {
+      "id": "norway",
+      "pbf": "https://download.geofabrik.de/europe/norway-latest.osm.pbf",
+      "approxBytes": 1371453792
+    },
+    {
+      "id": "nova-scotia",
+      "pbf": "https://download.geofabrik.de/north-america/canada/nova-scotia-latest.osm.pbf",
+      "approxBytes": 98765344
+    },
+    {
+      "id": "nunavut",
+      "pbf": "https://download.geofabrik.de/north-america/canada/nunavut-latest.osm.pbf",
+      "approxBytes": 1486531503
+    },
+    {
+      "id": "ontario",
+      "pbf": "https://download.geofabrik.de/north-america/canada/ontario-latest.osm.pbf",
+      "approxBytes": 967445395
+    },
+    {
+      "id": "pakistan",
+      "pbf": "https://download.geofabrik.de/asia/pakistan-latest.osm.pbf",
+      "approxBytes": 154211544
+    },
+    {
+      "id": "philippines",
+      "pbf": "https://download.geofabrik.de/asia/philippines-latest.osm.pbf",
+      "approxBytes": 601521620
+    },
+    {
+      "id": "poland",
+      "pbf": "https://download.geofabrik.de/europe/poland-latest.osm.pbf",
+      "approxBytes": 2077529063
+    },
+    {
+      "id": "portugal",
+      "pbf": "https://download.geofabrik.de/europe/portugal-latest.osm.pbf",
+      "approxBytes": 418536872
+    },
+    {
+      "id": "prince-edward-island",
+      "pbf": "https://download.geofabrik.de/north-america/canada/prince-edward-island-latest.osm.pbf",
+      "approxBytes": 11233553
+    },
+    {
+      "id": "quebec",
+      "pbf": "https://download.geofabrik.de/north-america/canada/quebec-latest.osm.pbf",
+      "approxBytes": 1157590948
+    },
+    {
+      "id": "romania",
+      "pbf": "https://download.geofabrik.de/europe/romania-latest.osm.pbf",
+      "approxBytes": 324405207
+    },
+    {
+      "id": "russia",
+      "pbf": "https://download.geofabrik.de/russia-latest.osm.pbf",
+      "approxBytes": 4128449785
+    },
+    {
+      "id": "rwanda",
+      "pbf": "https://download.geofabrik.de/africa/rwanda-latest.osm.pbf",
+      "approxBytes": 65790944
+    },
+    {
+      "id": "saint-helena-ascension-and-tristan-da-cunha",
+      "pbf": "https://download.geofabrik.de/africa/saint-helena-ascension-and-tristan-da-cunha-latest.osm.pbf",
+      "approxBytes": 893982
+    },
+    {
+      "id": "sao-tome-and-principe",
+      "pbf": "https://download.geofabrik.de/africa/sao-tome-and-principe-latest.osm.pbf",
+      "approxBytes": 1255896
+    },
+    {
+      "id": "saskatchewan",
+      "pbf": "https://download.geofabrik.de/north-america/canada/saskatchewan-latest.osm.pbf",
+      "approxBytes": 115710210
+    },
+    {
+      "id": "senegal-and-gambia",
+      "pbf": "https://download.geofabrik.de/africa/senegal-and-gambia-latest.osm.pbf",
+      "approxBytes": 105005071
+    },
+    {
+      "id": "serbia",
+      "pbf": "https://download.geofabrik.de/europe/serbia-latest.osm.pbf",
+      "approxBytes": 237811414
+    },
+    {
+      "id": "seychelles",
+      "pbf": "https://download.geofabrik.de/africa/seychelles-latest.osm.pbf",
+      "approxBytes": 2755711
+    },
+    {
+      "id": "sierra-leone",
+      "pbf": "https://download.geofabrik.de/africa/sierra-leone-latest.osm.pbf",
+      "approxBytes": 42974013
+    },
+    {
+      "id": "slovakia",
+      "pbf": "https://download.geofabrik.de/europe/slovakia-latest.osm.pbf",
+      "approxBytes": 341040917
+    },
+    {
+      "id": "slovenia",
+      "pbf": "https://download.geofabrik.de/europe/slovenia-latest.osm.pbf",
+      "approxBytes": 310146885
+    },
+    {
+      "id": "somalia",
+      "pbf": "https://download.geofabrik.de/africa/somalia-latest.osm.pbf",
+      "approxBytes": 164532401
+    },
+    {
+      "id": "south-africa",
+      "pbf": "https://download.geofabrik.de/africa/south-africa-latest.osm.pbf",
+      "approxBytes": 416695193
+    },
+    {
+      "id": "south-america",
+      "pbf": "https://download.geofabrik.de/south-america-latest.osm.pbf",
+      "approxBytes": 4074145487
+    },
+    {
+      "id": "south-korea",
+      "pbf": "https://download.geofabrik.de/asia/south-korea-latest.osm.pbf",
+      "approxBytes": 283582059
+    },
+    {
+      "id": "south-sudan",
+      "pbf": "https://download.geofabrik.de/africa/south-sudan-latest.osm.pbf",
+      "approxBytes": 138115204
+    },
+    {
+      "id": "spain",
+      "pbf": "https://download.geofabrik.de/europe/spain-latest.osm.pbf",
+      "approxBytes": 1463355632
+    },
+    {
+      "id": "sri-lanka",
+      "pbf": "https://download.geofabrik.de/asia/sri-lanka-latest.osm.pbf",
+      "approxBytes": 143438970
+    },
+    {
+      "id": "sudan",
+      "pbf": "https://download.geofabrik.de/africa/sudan-latest.osm.pbf",
+      "approxBytes": 202607627
+    },
+    {
+      "id": "swaziland",
+      "pbf": "https://download.geofabrik.de/africa/swaziland-latest.osm.pbf",
+      "approxBytes": 30567355
+    },
+    {
+      "id": "sweden",
+      "pbf": "https://download.geofabrik.de/europe/sweden-latest.osm.pbf",
+      "approxBytes": 810278296
+    },
+    {
+      "id": "switzerland",
+      "pbf": "https://download.geofabrik.de/europe/switzerland-latest.osm.pbf",
+      "approxBytes": 539899612
+    },
+    {
+      "id": "syria",
+      "pbf": "https://download.geofabrik.de/asia/syria-latest.osm.pbf",
+      "approxBytes": 81213630
+    },
+    {
+      "id": "taiwan",
+      "pbf": "https://download.geofabrik.de/asia/taiwan-latest.osm.pbf",
+      "approxBytes": 325228432
+    },
+    {
+      "id": "tajikistan",
+      "pbf": "https://download.geofabrik.de/asia/tajikistan-latest.osm.pbf",
+      "approxBytes": 47967588
+    },
+    {
+      "id": "tanzania",
+      "pbf": "https://download.geofabrik.de/africa/tanzania-latest.osm.pbf",
+      "approxBytes": 704929465
+    },
+    {
+      "id": "thailand",
+      "pbf": "https://download.geofabrik.de/asia/thailand-latest.osm.pbf",
+      "approxBytes": 325415853
+    },
+    {
+      "id": "togo",
+      "pbf": "https://download.geofabrik.de/africa/togo-latest.osm.pbf",
+      "approxBytes": 62211181
+    },
+    {
+      "id": "tunisia",
+      "pbf": "https://download.geofabrik.de/africa/tunisia-latest.osm.pbf",
+      "approxBytes": 83872151
+    },
+    {
+      "id": "turkey",
+      "pbf": "https://download.geofabrik.de/europe/turkey-latest.osm.pbf",
+      "approxBytes": 638932738
+    },
+    {
+      "id": "turkmenistan",
+      "pbf": "https://download.geofabrik.de/asia/turkmenistan-latest.osm.pbf",
+      "approxBytes": 24582653
+    },
+    {
+      "id": "uganda",
+      "pbf": "https://download.geofabrik.de/africa/uganda-latest.osm.pbf",
+      "approxBytes": 370302093
+    },
+    {
+      "id": "ukraine",
+      "pbf": "https://download.geofabrik.de/europe/ukraine-latest.osm.pbf",
+      "approxBytes": 869649317
+    },
+    {
+      "id": "us/alabama",
+      "pbf": "https://download.geofabrik.de/north-america/us/alabama-latest.osm.pbf",
+      "approxBytes": 146195181
+    },
+    {
+      "id": "us/alaska",
+      "pbf": "https://download.geofabrik.de/north-america/us/alaska-latest.osm.pbf",
+      "approxBytes": 143628518
+    },
+    {
+      "id": "us/arizona",
+      "pbf": "https://download.geofabrik.de/north-america/us/arizona-latest.osm.pbf",
+      "approxBytes": 299482652
+    },
+    {
+      "id": "us/arkansas",
+      "pbf": "https://download.geofabrik.de/north-america/us/arkansas-latest.osm.pbf",
+      "approxBytes": 98538273
+    },
+    {
+      "id": "us/california",
+      "pbf": "https://download.geofabrik.de/north-america/us/california-latest.osm.pbf",
+      "approxBytes": 1320988982
+    },
+    {
+      "id": "us/colorado",
+      "pbf": "https://download.geofabrik.de/north-america/us/colorado-latest.osm.pbf",
+      "approxBytes": 376160951
+    },
+    {
+      "id": "us/connecticut",
+      "pbf": "https://download.geofabrik.de/north-america/us/connecticut-latest.osm.pbf",
+      "approxBytes": 215987665
+    },
+    {
+      "id": "us/delaware",
+      "pbf": "https://download.geofabrik.de/north-america/us/delaware-latest.osm.pbf",
+      "approxBytes": 21789121
+    },
+    {
+      "id": "us/district-of-columbia",
+      "pbf": "https://download.geofabrik.de/north-america/us/district-of-columbia-latest.osm.pbf",
+      "approxBytes": 20897122
+    },
+    {
+      "id": "us/florida",
+      "pbf": "https://download.geofabrik.de/north-america/us/florida-latest.osm.pbf",
+      "approxBytes": 652645236
+    },
+    {
+      "id": "us/georgia",
+      "pbf": "https://download.geofabrik.de/north-america/us/georgia-latest.osm.pbf",
+      "approxBytes": 354350568
+    },
+    {
+      "id": "us/hawaii",
+      "pbf": "https://download.geofabrik.de/north-america/us/hawaii-latest.osm.pbf",
+      "approxBytes": 26424390
+    },
+    {
+      "id": "us/idaho",
+      "pbf": "https://download.geofabrik.de/north-america/us/idaho-latest.osm.pbf",
+      "approxBytes": 127106213
+    },
+    {
+      "id": "us/illinois",
+      "pbf": "https://download.geofabrik.de/north-america/us/illinois-latest.osm.pbf",
+      "approxBytes": 354811187
+    },
+    {
+      "id": "us/indiana",
+      "pbf": "https://download.geofabrik.de/north-america/us/indiana-latest.osm.pbf",
+      "approxBytes": 196074111
+    },
+    {
+      "id": "us/iowa",
+      "pbf": "https://download.geofabrik.de/north-america/us/iowa-latest.osm.pbf",
+      "approxBytes": 132260374
+    },
+    {
+      "id": "us/kansas",
+      "pbf": "https://download.geofabrik.de/north-america/us/kansas-latest.osm.pbf",
+      "approxBytes": 113965963
+    },
+    {
+      "id": "us/kentucky",
+      "pbf": "https://download.geofabrik.de/north-america/us/kentucky-latest.osm.pbf",
+      "approxBytes": 152866163
+    },
+    {
+      "id": "us/louisiana",
+      "pbf": "https://download.geofabrik.de/north-america/us/louisiana-latest.osm.pbf",
+      "approxBytes": 145237242
+    },
+    {
+      "id": "us/maine",
+      "pbf": "https://download.geofabrik.de/north-america/us/maine-latest.osm.pbf",
+      "approxBytes": 90338524
+    },
+    {
+      "id": "us/maryland",
+      "pbf": "https://download.geofabrik.de/north-america/us/maryland-latest.osm.pbf",
+      "approxBytes": 213100568
+    },
+    {
+      "id": "us/massachusetts",
+      "pbf": "https://download.geofabrik.de/north-america/us/massachusetts-latest.osm.pbf",
+      "approxBytes": 308642998
+    },
+    {
+      "id": "us/michigan",
+      "pbf": "https://download.geofabrik.de/north-america/us/michigan-latest.osm.pbf",
+      "approxBytes": 309894427
+    },
+    {
+      "id": "us/minnesota",
+      "pbf": "https://download.geofabrik.de/north-america/us/minnesota-latest.osm.pbf",
+      "approxBytes": 281700984
+    },
+    {
+      "id": "us/mississippi",
+      "pbf": "https://download.geofabrik.de/north-america/us/mississippi-latest.osm.pbf",
+      "approxBytes": 93431659
+    },
+    {
+      "id": "us/missouri",
+      "pbf": "https://download.geofabrik.de/north-america/us/missouri-latest.osm.pbf",
+      "approxBytes": 192526797
+    },
+    {
+      "id": "us/montana",
+      "pbf": "https://download.geofabrik.de/north-america/us/montana-latest.osm.pbf",
+      "approxBytes": 99437288
+    },
+    {
+      "id": "us/nebraska",
+      "pbf": "https://download.geofabrik.de/north-america/us/nebraska-latest.osm.pbf",
+      "approxBytes": 99216023
+    },
+    {
+      "id": "us/nevada",
+      "pbf": "https://download.geofabrik.de/north-america/us/nevada-latest.osm.pbf",
+      "approxBytes": 122247210
+    },
+    {
+      "id": "us/new-hampshire",
+      "pbf": "https://download.geofabrik.de/north-america/us/new-hampshire-latest.osm.pbf",
+      "approxBytes": 70703256
+    },
+    {
+      "id": "us/new-jersey",
+      "pbf": "https://download.geofabrik.de/north-america/us/new-jersey-latest.osm.pbf",
+      "approxBytes": 162222290
+    },
+    {
+      "id": "us/new-mexico",
+      "pbf": "https://download.geofabrik.de/north-america/us/new-mexico-latest.osm.pbf",
+      "approxBytes": 135521950
+    },
+    {
+      "id": "us/new-york",
+      "pbf": "https://download.geofabrik.de/north-america/us/new-york-latest.osm.pbf",
+      "approxBytes": 493684510
+    },
+    {
+      "id": "us/north-carolina",
+      "pbf": "https://download.geofabrik.de/north-america/us/north-carolina-latest.osm.pbf",
+      "approxBytes": 425864280
+    },
+    {
+      "id": "us/north-dakota",
+      "pbf": "https://download.geofabrik.de/north-america/us/north-dakota-latest.osm.pbf",
+      "approxBytes": 127075226
+    },
+    {
+      "id": "us/ohio",
+      "pbf": "https://download.geofabrik.de/north-america/us/ohio-latest.osm.pbf",
+      "approxBytes": 319916136
+    },
+    {
+      "id": "us/oklahoma",
+      "pbf": "https://download.geofabrik.de/north-america/us/oklahoma-latest.osm.pbf",
+      "approxBytes": 167084335
+    },
+    {
+      "id": "us/oregon",
+      "pbf": "https://download.geofabrik.de/north-america/us/oregon-latest.osm.pbf",
+      "approxBytes": 251553842
+    },
+    {
+      "id": "us/pennsylvania",
+      "pbf": "https://download.geofabrik.de/north-america/us/pennsylvania-latest.osm.pbf",
+      "approxBytes": 342736552
+    },
+    {
+      "id": "us/puerto-rico",
+      "pbf": "https://download.geofabrik.de/north-america/us/puerto-rico-latest.osm.pbf",
+      "approxBytes": 73520698
+    },
+    {
+      "id": "us/rhode-island",
+      "pbf": "https://download.geofabrik.de/north-america/us/rhode-island-latest.osm.pbf",
+      "approxBytes": 51760627
+    },
+    {
+      "id": "us/south-carolina",
+      "pbf": "https://download.geofabrik.de/north-america/us/south-carolina-latest.osm.pbf",
+      "approxBytes": 161559814
+    },
+    {
+      "id": "us/south-dakota",
+      "pbf": "https://download.geofabrik.de/north-america/us/south-dakota-latest.osm.pbf",
+      "approxBytes": 47872393
+    },
+    {
+      "id": "us/tennessee",
+      "pbf": "https://download.geofabrik.de/north-america/us/tennessee-latest.osm.pbf",
+      "approxBytes": 186438821
+    },
+    {
+      "id": "us/texas",
+      "pbf": "https://download.geofabrik.de/north-america/us/texas-latest.osm.pbf",
+      "approxBytes": 710878689
+    },
+    {
+      "id": "us/us-virgin-islands",
+      "pbf": "https://download.geofabrik.de/north-america/us/us-virgin-islands-latest.osm.pbf",
+      "approxBytes": 3114269
+    },
+    {
+      "id": "us/utah",
+      "pbf": "https://download.geofabrik.de/north-america/us/utah-latest.osm.pbf",
+      "approxBytes": 166347930
+    },
+    {
+      "id": "us/vermont",
+      "pbf": "https://download.geofabrik.de/north-america/us/vermont-latest.osm.pbf",
+      "approxBytes": 45646076
+    },
+    {
+      "id": "us/virginia",
+      "pbf": "https://download.geofabrik.de/north-america/us/virginia-latest.osm.pbf",
+      "approxBytes": 425505965
+    },
+    {
+      "id": "us/washington",
+      "pbf": "https://download.geofabrik.de/north-america/us/washington-latest.osm.pbf",
+      "approxBytes": 359022396
+    },
+    {
+      "id": "us/west-virginia",
+      "pbf": "https://download.geofabrik.de/north-america/us/west-virginia-latest.osm.pbf",
+      "approxBytes": 97378187
+    },
+    {
+      "id": "us/wisconsin",
+      "pbf": "https://download.geofabrik.de/north-america/us/wisconsin-latest.osm.pbf",
+      "approxBytes": 290757888
+    },
+    {
+      "id": "us/wyoming",
+      "pbf": "https://download.geofabrik.de/north-america/us/wyoming-latest.osm.pbf",
+      "approxBytes": 92536996
+    },
+    {
+      "id": "uzbekistan",
+      "pbf": "https://download.geofabrik.de/asia/uzbekistan-latest.osm.pbf",
+      "approxBytes": 121071800
+    },
+    {
+      "id": "vietnam",
+      "pbf": "https://download.geofabrik.de/asia/vietnam-latest.osm.pbf",
+      "approxBytes": 325508504
+    },
+    {
+      "id": "yemen",
+      "pbf": "https://download.geofabrik.de/asia/yemen-latest.osm.pbf",
+      "approxBytes": 42997694
+    },
+    {
+      "id": "yukon",
+      "pbf": "https://download.geofabrik.de/north-america/canada/yukon-latest.osm.pbf",
+      "approxBytes": 74054920
+    },
+    {
+      "id": "zambia",
+      "pbf": "https://download.geofabrik.de/africa/zambia-latest.osm.pbf",
+      "approxBytes": 251589005
+    },
+    {
+      "id": "zimbabwe",
+      "pbf": "https://download.geofabrik.de/africa/zimbabwe-latest.osm.pbf",
+      "approxBytes": 178882702
+    }
+  ]
+}

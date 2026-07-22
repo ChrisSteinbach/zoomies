@@ -3,12 +3,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import {
-  BATHING_FEATURE_TAGS,
-  DOG_PARK_TAG,
-  HUNDBAD_NAME_SUBSTRING,
-} from "../src/app/osm-tags";
 import { SWEDEN_REGION, assertDatasetSane, buildDataset } from "./convert";
+import { FILTER_EXPRESSIONS } from "./filter";
 
 /**
  * The offline pipeline's orchestrator (docs/spec.md §5, Option B):
@@ -25,30 +21,6 @@ import { SWEDEN_REGION, assertDatasetSane, buildDataset } from "./convert";
  * Run as `npm run data:build -- --pbf … --poly … --out …`, or see USAGE.
  * Needs osmium-tool on PATH (a system package; CI installs it with apt).
  */
-
-/**
- * What `osmium tags-filter` keeps, derived from the shared vocabulary in
- * osm-tags.ts so this preselection cannot drift from the converter that
- * grades it. It is a SUPERSET on purpose: every expression may keep more
- * than the app wants — untagged beaches, dog=no bathing places — and the
- * converter applies the exact rules (isDogPark, isBathingCandidate) to
- * what survives.
- *
- * The two name globs are where the superset is subtle. osmium's value
- * matching is case-sensitive while the app's name rule is
- * case-insensitive, so the leading letter — the one whose case flips
- * between "hundbad" and "Hundbad" — is dropped from the pattern, and a
- * second all-caps glob catches "HUNDBAD". A theoretical mixed-case
- * "HuNdBaD" is lost at this stage: the accepted cost, since no such name
- * has been seen in the wild and the alternative is keeping every named
- * object in Sweden.
- */
-const FILTER_EXPRESSIONS = [
-  `nwr/${DOG_PARK_TAG.key}=${DOG_PARK_TAG.value}`,
-  ...BATHING_FEATURE_TAGS.map(({ key, value }) => `nwr/${key}=${value}`),
-  `nwr/name=*${HUNDBAD_NAME_SUBSTRING.slice(1)}*`,
-  `nwr/name=*${HUNDBAD_NAME_SUBSTRING.slice(1).toUpperCase()}*`,
-];
 
 const USAGE = [
   "Usage: npx tsx pipeline/build-dataset.ts --pbf <extract.osm.pbf> --poly <boundary.poly> --out <dataset.json> [--region <name>]",
