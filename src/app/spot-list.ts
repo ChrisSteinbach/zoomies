@@ -139,6 +139,9 @@ export function spotLabel({ name, kind }: DogSpot): string {
 export function describeTags(tags: SpotTags): string[] {
   const labels: string[] = [];
 
+  if (tags.leashRequired !== undefined) {
+    labels.push(tags.leashRequired ? "Leash required" : "Off-leash OK");
+  }
   if (tags.fenced !== undefined) {
     labels.push(tags.fenced ? "Fenced" : "Not fenced");
   }

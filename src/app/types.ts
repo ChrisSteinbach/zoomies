@@ -40,6 +40,11 @@ export type Provenance =
  * confidently-wrong answer the spec forbids (docs/spec.md §3).
  */
 export interface SpotTags {
+  /** Whether the rules demand a lead: `dog=leashed` or `dog=unleashed`.
+   *  The rule as mapped, not the law of the day — Swedish municipal leash
+   *  seasons can override it in either direction, which the verify-signage
+   *  stance covers (docs/spec.md §4.5.3). */
+  leashRequired?: boolean;
   /** Enclosed, so a dog can be let off the lead without leaving. */
   fenced?: boolean;
   /** Lit after dark — the difference between usable and not, in a Swedish

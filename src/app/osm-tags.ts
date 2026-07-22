@@ -219,6 +219,9 @@ function seasonalRule(tags: Record<string, unknown>): SeasonalRule | undefined {
 export function toSpotTags(tags: Record<string, unknown>): SpotTags {
   const spotTags: SpotTags = {};
 
+  const leashRequired = readLeashRequired(tags);
+  if (leashRequired !== undefined) spotTags.leashRequired = leashRequired;
+
   const fenced = readFenced(tags);
   if (fenced !== undefined) spotTags.fenced = fenced;
 
@@ -231,6 +234,26 @@ export function toSpotTags(tags: Record<string, unknown>): SpotTags {
   if (typeof surface === "string" && surface !== "") spotTags.surface = surface;
 
   return spotTags;
+}
+
+/**
+ * Whether dogs must be kept on a lead.
+ *
+ * OSM's `dog` tag answers two different questions: whether dogs may enter
+ * (`yes`, `no`, `designated`) and what the rules demand once they are in
+ * (`leashed`, `unleashed`). Only the two leash values answer this one —
+ * `dog=designated` welcomes dogs and says nothing about leads, so it
+ * leaves the answer unknown rather than implying one.
+ *
+ * And it is only the rule as mapped: Swedish leash seasons (1 March –
+ * 20 August in many municipalities) can override an `unleashed` tag for
+ * months at a time, which is what the verify-signage stance covers
+ * (docs/spec.md §4.5.3).
+ */
+function readLeashRequired(tags: Record<string, unknown>): boolean | undefined {
+  if (tags.dog === "leashed") return true;
+  if (tags.dog === "unleashed") return false;
+  return undefined;
 }
 
 /**
