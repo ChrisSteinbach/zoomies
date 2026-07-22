@@ -26,8 +26,9 @@ export const OSM_COPYRIGHT_URL = "https://www.openstreetmap.org/copyright";
  *
  * The honest answer to a missing dog park or hundbad is that OSM does not know
  * about it yet, and the fix is to add it (docs/spec.md §4.3). Saying so costs a
- * sentence, improves the commons rather than just this app, and is the whole of
- * what the MVP does about contribution — no tooling.
+ * sentence — the About dialog (about.ts) says it — improves the commons rather
+ * than just this app, and is the whole of what the MVP does about contribution:
+ * no tooling.
  */
 export const OSM_CONTRIBUTE_URL = "https://www.openstreetmap.org/fixthemap";
 
@@ -59,12 +60,18 @@ export const OSM_TILE_ATTRIBUTION = `&copy; <a href="${OSM_COPYRIGHT_URL}">OpenS
  * it differently or not at all. Mount it once, next to the region the phases
  * render into rather than inside it, and the obligation is met for the whole
  * session.
+ *
+ * One line, and only the line the licence asks for. The fuller story — the
+ * invitation to map a missing park, the privacy note, the caveats — lives in
+ * the About dialog (about.ts), a tap away behind the ⓘ button. The credit is
+ * the one piece that may not retreat behind a tap, so it is the one piece
+ * that stays pinned.
  */
 export function createAttribution(): HTMLElement {
   const footer = document.createElement("footer");
   footer.className = "attribution";
 
-  footer.append(dataCredit(), contributeInvitation());
+  footer.append(dataCredit());
   return footer;
 }
 
@@ -77,17 +84,6 @@ function dataCredit(): HTMLParagraphElement {
   const licence = externalLink(ODBL_URL, "ODbL");
 
   line.append("Place data ", credit, ", licensed ", licence, ".");
-  return line;
-}
-
-/** The §4.3 note: a missing park is a gap in OSM, and gaps can be filled. */
-function contributeInvitation(): HTMLParagraphElement {
-  const line = document.createElement("p");
-  line.className = "attribution-contribute";
-
-  const link = externalLink(OSM_CONTRIBUTE_URL, "add it to OpenStreetMap");
-
-  line.append("Dog park or hundbad missing? ", link, " and everyone gets it.");
   return line;
 }
 

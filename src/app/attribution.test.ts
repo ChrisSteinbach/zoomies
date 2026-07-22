@@ -39,13 +39,14 @@ describe("createAttribution", () => {
     expect(attributionText()).toContain("ODbL");
   });
 
-  it("says what to do about a place OSM has never heard of", () => {
+  it("keeps to the one line the licence asks for", () => {
     const footer = createAttribution();
 
-    // The honest fix for a missing park or hundbad is to map it (docs/spec.md
-    // §4.3) — the app says so and links to OSM's own page about it.
-    expect(footer.textContent).toMatch(/missing/i);
-    expect(linkTo(footer, "openstreetmap.org/fixthemap")).not.toBeNull();
+    // Everything beyond the credit — the invitation to map a missing park,
+    // the caveats — lives in the About dialog (about.test.ts pins it there).
+    // The pinned bar carries only the obligation, so it stays small enough
+    // to never argue with the results for screen room.
+    expect(footer.querySelectorAll("p")).toHaveLength(1);
   });
 
   it("leaves the app rather than losing the session", () => {
