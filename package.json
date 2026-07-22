@@ -16,6 +16,9 @@
     "test:coverage": "vitest run --coverage",
     "lint": "tsc --noEmit && eslint src/ pipeline/ && stylelint \"src/**/*.css\" && prettier --check .",
     "lint:fix": "eslint src/ pipeline/ --fix && stylelint \"src/**/*.css\" --fix && prettier --write .",
+    "lint:stylelint": "stylelint \"src/**/*.css\"",
+    "lint:eslint": "eslint src/ pipeline/",
+    "lint:eslint:fix": "eslint src/ pipeline/ --fix",
     "format": "prettier --check .",
     "format:fix": "prettier --write .",
     "prepare": "husky"
