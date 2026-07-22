@@ -118,6 +118,8 @@ export type Event =
   | { kind: "retry-requested" }
   /** Ask the device where we are again, after it failed to say. */
   | { kind: "location-retry-requested" }
+  /** Follow the device again, after the position was set by hand. */
+  | { kind: "follow-requested" }
   | { kind: "spot-selected"; id: string | null }
   | { kind: "directions-requested"; id: string }
   /** The bathing-spots layer was switched on or off. */
@@ -171,10 +173,23 @@ function decide(state: AppState, event: Event): TransitionResult {
       return positionFixed(state, event.position);
 
     case "location-failed":
-      // A denied permission is only fatal while we have nothing to show. If
-      // the user is already looking at results, a later failure to refresh
-      // the fix is not worth throwing them out of the app for.
-      if (hasPosition(state)) return stay(state);
+      if (hasPosition(state)) {
+        // A position with no source means `follow-requested` restarted the
+        // watcher, and it has now said no. The hand-picked position stands
+        // again — reverting the source is what settles the mode control —
+        // and the watcher stops rather than being left to fail at the same
+        // wall. Asking again stays one tap away.
+        if (state.positionSource === null) {
+          return {
+            next: { ...state, positionSource: "picked" },
+            effects: [{ kind: "stop-watching" }],
+          };
+        }
+        // A denied permission is only fatal while we have nothing to show. If
+        // the user is already looking at results, a later failure to refresh
+        // the fix is not worth throwing them out of the app for.
+        return stay(state);
+      }
       return {
         next: {
           ...state,
@@ -220,6 +235,20 @@ function decide(state: AppState, event: Event): TransitionResult {
         ],
       };
     }
+
+    case "follow-requested":
+      // Only meaningful when the position was set by hand — that is the one
+      // state whose watcher was deliberately stopped. The results on screen
+      // stay: they are still the answer for the picked spot, and they remain
+      // so until a real fix lands and {@link positionFixed} decides whether
+      // the user has actually moved. `positionSource` goes to null — "no
+      // deliberate choice any more, no fix yet" — which is what lets that
+      // next fix through the picked-position guard.
+      if (state.positionSource !== "picked") return stay(state);
+      return {
+        next: { ...state, positionSource: null },
+        effects: [{ kind: "watch-location" }],
+      };
 
     case "search-succeeded":
       return searchSucceeded(state, event.spots, event.searchedRadiusM);
@@ -375,13 +404,32 @@ function positionFixed(state: AppState, position: LatLon): TransitionResult {
         effects: [{ kind: "search", position }],
       };
 
-    case "searching":
-      // A query is already in flight for very nearly this spot. Move the
-      // position so distances stay live, but do not fire a second request.
+    case "searching": {
+      // GPS ticks land close together, so a query already in flight is
+      // usually for very nearly this spot: move the position so distances
+      // stay live, and do not fire a second request. But a fix can also land
+      // far away — the first one after `follow-requested`, or a real fix
+      // correcting a stale cached one — and the in-flight answer would then
+      // be presented as if it described this new place. Really moved means
+      // ask again; the composition root's token drops the superseded answer.
+      if (
+        haversineMeters(state.phase.position, position) < REQUERY_DISTANCE_M
+      ) {
+        return {
+          next: { ...withGps, phase: { ...state.phase, position } },
+          effects: [],
+        };
+      }
+      const bathing = refreshedBathing(state, position);
       return {
-        next: { ...withGps, phase: { ...state.phase, position } },
-        effects: [],
+        next: {
+          ...withGps,
+          phase: { ...state.phase, position },
+          bathing: bathing.bathing,
+        },
+        effects: [{ kind: "search", position }, ...bathing.effects],
       };
+    }
 
     case "ready":
     case "empty":

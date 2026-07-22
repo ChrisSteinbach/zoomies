@@ -128,6 +128,118 @@ describe("picking a position by hand", () => {
     expect(phasePosition(state.phase)).toEqual(TANTOLUNDEN);
     expect(effects).toEqual([]);
   });
+
+  it("follows the device again when asked, keeping the picked results on screen", () => {
+    const { state, effects } = run([
+      { kind: "position-picked", position: TANTOLUNDEN },
+      {
+        kind: "search-succeeded",
+        spots: [TANTO, DRAKEN],
+        searchedRadiusM: 3000,
+      },
+      { kind: "follow-requested" },
+    ]);
+
+    expect(state.positionSource).toBeNull();
+    expect(state.phase).toMatchObject({
+      kind: "ready",
+      spots: [TANTO, DRAKEN],
+    });
+    expect(effects).toEqual([{ kind: "watch-location" }]);
+  });
+
+  it("ignores a follow request when it is already following the GPS", () => {
+    const { state, effects } = run([
+      ...showingResults,
+      { kind: "follow-requested" },
+    ]);
+
+    expect(effects).toEqual([]);
+    expect(state.positionSource).toBe("gps");
+  });
+
+  it("searches from the real fix when following resumes somewhere else", () => {
+    const { state, effects } = run([
+      { kind: "position-picked", position: TANTOLUNDEN },
+      {
+        kind: "search-succeeded",
+        spots: [TANTO, DRAKEN],
+        searchedRadiusM: 3000,
+      },
+      { kind: "follow-requested" },
+      { kind: "position-fixed", position: A_WALK_AWAY },
+    ]);
+
+    expect(state.phase).toMatchObject({
+      kind: "searching",
+      position: A_WALK_AWAY,
+      staleSpots: [TANTO, DRAKEN],
+    });
+    expect(state.positionSource).toBe("gps");
+    expect(effects).toEqual([{ kind: "search", position: A_WALK_AWAY }]);
+  });
+
+  it("keeps the picked results when the resumed fix lands a few steps away", () => {
+    const { state, effects } = run([
+      { kind: "position-picked", position: TANTOLUNDEN },
+      {
+        kind: "search-succeeded",
+        spots: [TANTO, DRAKEN],
+        searchedRadiusM: 3000,
+      },
+      { kind: "follow-requested" },
+      { kind: "position-fixed", position: A_FEW_STEPS },
+    ]);
+
+    expect(state.phase).toMatchObject({
+      kind: "ready",
+      position: A_FEW_STEPS,
+      spots: [TANTO, DRAKEN],
+    });
+    expect(effects).toEqual([]);
+    expect(state.positionSource).toBe("gps");
+  });
+
+  it("stands by the picked position when the device still cannot say", () => {
+    const { state, effects } = run([
+      { kind: "position-picked", position: TANTOLUNDEN },
+      {
+        kind: "search-succeeded",
+        spots: [TANTO, DRAKEN],
+        searchedRadiusM: 3000,
+      },
+      { kind: "follow-requested" },
+      { kind: "location-failed", reason: "POSITION_UNAVAILABLE" },
+    ]);
+
+    expect(state.positionSource).toBe("picked");
+    expect(state.phase).toMatchObject({
+      kind: "ready",
+      spots: [TANTO, DRAKEN],
+    });
+    expect(effects).toEqual([{ kind: "stop-watching" }]);
+  });
+
+  it("lets a new pick win over a resume still waiting for its fix", () => {
+    const { state, effects } = run([
+      { kind: "position-picked", position: TANTOLUNDEN },
+      {
+        kind: "search-succeeded",
+        spots: [TANTO, DRAKEN],
+        searchedRadiusM: 3000,
+      },
+      { kind: "follow-requested" },
+      { kind: "position-picked", position: A_WALK_AWAY },
+    ]);
+
+    expect(state.positionSource).toBe("picked");
+    expect(state.phase).toMatchObject({
+      kind: "searching",
+      position: A_WALK_AWAY,
+    });
+    expect(effects).toContainEqual({ kind: "stop-watching" });
+    expect(effects).toContainEqual({ kind: "search", position: A_WALK_AWAY });
+  });
 });
 
 describe("answering the search", () => {
@@ -275,7 +387,22 @@ describe("following the user as they walk", () => {
     expect(effects).toEqual([{ kind: "search", position: A_WALK_AWAY }]);
   });
 
-  it("does not fire a second query while one is already in flight", () => {
+  it("does not stack a second query on a GPS tick while one is in flight", () => {
+    const { state, effects } = run([
+      { kind: "position-fixed", position: TANTOLUNDEN },
+      { kind: "position-fixed", position: A_FEW_STEPS },
+    ]);
+
+    expect(state.phase).toMatchObject({
+      kind: "searching",
+      position: A_FEW_STEPS,
+    });
+    expect(effects).toEqual([]);
+  });
+
+  it("asks again when a fix mid-flight lands somewhere genuinely else", () => {
+    // The in-flight query was asked about the old spot; presenting its answer
+    // as if it described the new one would mislabel the results.
     const { state, effects } = run([
       { kind: "position-fixed", position: TANTOLUNDEN },
       { kind: "position-fixed", position: A_WALK_AWAY },
@@ -285,7 +412,7 @@ describe("following the user as they walk", () => {
       kind: "searching",
       position: A_WALK_AWAY,
     });
-    expect(effects).toEqual([]);
+    expect(effects).toEqual([{ kind: "search", position: A_WALK_AWAY }]);
   });
 });
 
@@ -512,6 +639,31 @@ describe("the bathing layer", () => {
     ]);
 
     expect(state.bathing.kind).toBe("loading");
+    expect(effects).toEqual([
+      { kind: "search", position: A_WALK_AWAY },
+      { kind: "search-bathing", position: A_WALK_AWAY },
+    ]);
+  });
+
+  it("refreshes an on bathing layer from the real fix when following resumes", () => {
+    const { state, effects } = run([
+      { kind: "position-picked", position: TANTOLUNDEN },
+      {
+        kind: "search-succeeded",
+        spots: [TANTO, DRAKEN],
+        searchedRadiusM: 3000,
+      },
+      { kind: "bathing-toggled" },
+      {
+        kind: "bathing-search-succeeded",
+        spots: [HUNDBADET],
+        searchedRadiusM: 10_000,
+      },
+      { kind: "follow-requested" },
+      { kind: "position-fixed", position: A_WALK_AWAY },
+    ]);
+
+    expect(state.bathing).toEqual({ kind: "loading", staleSpots: [HUNDBADET] });
     expect(effects).toEqual([
       { kind: "search", position: A_WALK_AWAY },
       { kind: "search-bathing", position: A_WALK_AWAY },
