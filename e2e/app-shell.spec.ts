@@ -230,6 +230,35 @@ test.describe("with the device's position shared", () => {
     await expect(firstRow).toContainText(NEAREST_PARK);
   });
 
+  test("the opening view holds both the user and the nearest park's pin", async ({
+    context,
+    page,
+  }) => {
+    await stubNetwork(context);
+    await page.goto("/");
+
+    // The stub answers instantly, but it still lands a render after the
+    // searching one — the sequence that once let the map plant its opening
+    // frame on the searching render, centred on the user at a fixed zoom,
+    // before the fit-all-spots branch ever got to run (zoomies-b3o,
+    // src/app/spot-map.ts). Waiting for the row is what lets that second
+    // render happen before the assertions below.
+    const firstRow = page.locator(".spot-list-item").first();
+    await expect(firstRow).toBeVisible();
+    await expect(firstRow).toContainText(NEAREST_PARK);
+
+    // The nearest park sits about a kilometre from STOCKHOLM, and a
+    // user-centred zoom-15 view at 375×667 spans only roughly ±460m ×
+    // ±820m — nowhere near enough to reach it. So the frame locking onto
+    // the searching render put the pin outside the viewport; only fitting
+    // user and results together, on the render that actually carries
+    // spots, brings both on screen at once.
+    await expect(page.locator(".spot-map-you")).toBeInViewport();
+    await expect(
+      page.locator(`.spot-map-pin[alt="${NEAREST_PARK}"]`),
+    ).toBeInViewport();
+  });
+
   test("a closed drawer can be reopened", async ({ context, page }) => {
     await stubNetwork(context);
     await page.goto("/");
