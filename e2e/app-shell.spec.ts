@@ -259,6 +259,57 @@ test.describe("with the device's position shared", () => {
     ).toBeInViewport();
   });
 
+  test("centres the you-are-here pin in the map the drawer leaves visible", async ({
+    context,
+    page,
+  }) => {
+    // Nothing found, so the map does the one thing it can with a lone
+    // position: centre on it (src/app/spot-map.ts frameOnce). That makes this
+    // the clean test of *where* centred is — with a side drawer over the map's
+    // right, the honest centre is the middle of the strip still showing, not
+    // the container's own midline hard against the drawer (zoomies-bwy).
+    await context.route("**/*", (route) => {
+      const url = new URL(route.request().url());
+      if (url.hostname === "localhost" || url.hostname === "127.0.0.1") {
+        return route.continue();
+      }
+      if (`${url.origin}${url.pathname}` === OVERPASS_ENDPOINT) {
+        return route.fulfill({
+          contentType: "application/json",
+          body: JSON.stringify({ version: 0.6, elements: [] }),
+        });
+      }
+      return route.abort();
+    });
+    await page.goto("/");
+
+    // The red pin is drawn once a position is known, found parks or not.
+    const you = page.locator(".spot-map-you");
+    await expect(you).toBeVisible();
+
+    const drawerBox = await page.locator(".spot-drawer").boundingBox();
+    const viewport = page.viewportSize();
+    if (drawerBox === null || viewport === null) {
+      throw new Error("the open drawer and the viewport should both exist");
+    }
+
+    // The visible map is the whole width when the sheet covers it (phone) and
+    // the strip left of the sheet when it sits beside it (desktop). The pin's
+    // centre belongs at the middle of whichever it is.
+    const coversMap = drawerBox.width >= viewport.width;
+    const visibleWidth = coversMap ? viewport.width : drawerBox.x;
+
+    await expect(async () => {
+      const youBox = await you.boundingBox();
+      expect(youBox).not.toBeNull();
+      const centreX = youBox!.x + youBox!.width / 2;
+      // Half a pin's width of tolerance. On desktop the drawer takes the right
+      // half, so the un-inset centre would land at viewport.width / 2 — the
+      // drawer's own edge, twice this target and nowhere near it.
+      expect(Math.abs(centreX - visibleWidth / 2)).toBeLessThan(20);
+    }).toPass({ timeout: 5_000 });
+  });
+
   test("a closed drawer can be reopened", async ({ context, page }) => {
     await stubNetwork(context);
     await page.goto("/");

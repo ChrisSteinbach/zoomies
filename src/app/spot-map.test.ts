@@ -535,6 +535,90 @@ describe("createSpotMap", () => {
     map.destroy();
   });
 
+  it("a deliberate frame centres the origin in the visible part of the map", () => {
+    const container = mount();
+    const map = createSpotMap(container, {
+      onSelect: vi.fn(),
+      onDirections: vi.fn(),
+      // A desktop drawer over the rightmost third: 130 of 390px, so the
+      // visible part is 260px wide and its midline sits at x=130.
+      obscuredRight: () => 130,
+    });
+
+    // The user picked a spot up in Vanadislunden. Centred in the visible
+    // part, the marker lands on that part's midpoint — centred in the whole
+    // container it would sit at 195px, hard against the drawer's edge.
+    const origin = { lat: VANADIS.lat, lon: VANADIS.lon };
+    map.frame(origin);
+    map.render([], origin, null);
+
+    const you = youAreHere(container)[0];
+    expect(you.style.left).toBe("130px");
+    expect(you.style.top).toBe("320px");
+
+    map.destroy();
+  });
+
+  it("the opening centring aims at the visible part of the map", () => {
+    const container = mount();
+    const map = createSpotMap(container, {
+      onSelect: vi.fn(),
+      onDirections: vi.fn(),
+      obscuredRight: () => 130,
+    });
+
+    // The searching render: no results yet, so the opening frame centres on
+    // the user — and with a drawer over the rightmost 130px, centred means
+    // the midpoint of the 260px still showing (x=130), not the container's
+    // own 195px.
+    map.render([], SLUSSEN, null);
+
+    const you = youAreHere(container)[0];
+    expect(you.style.left).toBe("130px");
+    expect(you.style.top).toBe("320px");
+
+    map.destroy();
+  });
+
+  it("the opening fit keeps the answer clear of the covered right edge", () => {
+    const container = mount();
+    const map = createSpotMap(container, {
+      onSelect: vi.fn(),
+      onDirections: vi.fn(),
+      // A desktop drawer over the rightmost 130px of 390 — the visible part
+      // ends at x=260.
+      obscuredRight: () => 130,
+    });
+    // ~0.0069° of longitude is ~161px at NEARBY_ZOOM (Web Mercator maps
+    // longitude straight to x, at 256·2¹⁵/360 ≈ 23302 px per degree). The
+    // pair fits at NEARBY_ZOOM with or without the inset — 161px goes into
+    // the 310px of symmetrically padded room as well as the 180px left once
+    // the covered strip joins the padding — so both fits land at the same
+    // zoom, and only the centring differs. A symmetric fit would centre the
+    // pair on the container's midline and put this pin at ≈195 + 161/2 =
+    // 275px: under the drawer. The inset shifts the fit's centre 65px west,
+    // to the visible part's midline, which the bound below detects.
+    const EAST = park({
+      id: "way/8003",
+      name: "Östlig hundrastgård",
+      lat: SLUSSEN.lat,
+      lon: SLUSSEN.lon + 0.0069,
+    });
+
+    map.render([EAST], SLUSSEN, null);
+
+    const pin = pinNamed(container, EAST.name!);
+    const you = youAreHere(container)[0];
+    for (const marker of [pin, you]) {
+      expect(parseFloat(marker.style.left)).toBeGreaterThanOrEqual(0);
+      expect(parseFloat(marker.style.left)).toBeLessThanOrEqual(260);
+      expect(parseFloat(marker.style.top)).toBeGreaterThanOrEqual(0);
+      expect(parseFloat(marker.style.top)).toBeLessThanOrEqual(640);
+    }
+
+    map.destroy();
+  });
+
   it("frames the results when they arrive after an empty searching render", () => {
     const container = mount();
     const map = createSpotMap(container, {
@@ -628,7 +712,7 @@ describe("createSpotMap", () => {
     map.destroy();
   });
 
-  it("a deliberate frame is not re-spent by results that arrive later", () => {
+  it("a plain render never re-fits a framed viewport", () => {
     const container = mount();
     const map = createSpotMap(container, {
       onSelect: vi.fn(),
@@ -646,15 +730,123 @@ describe("createSpotMap", () => {
     expect(you.style.top).toBe("320px");
 
     // BJORNS is the picked neighbourhood's own answer, arriving a render
-    // later — a fit to include it (BJORNS sits a few km south) would move
-    // the dot off the midpoint. The picked point stays the thing being
-    // looked at (state-machine.ts's position-picked comment): frame() has
-    // already spent the opening frame, and results arriving afterwards must
-    // not spend it again.
+    // later. render() itself is not a fit path — it draws the pin and leaves
+    // the viewport alone (the frame is spent), so the interim centre holds.
+    // Widening the view to hold that answer is frameResults' job, and only
+    // when a frame is owed one (see the frameResults tests below); a stale
+    // pin from the old neighbourhood must never pull the map on its own.
     map.render([BJORNS], origin, null);
 
     expect(you.style.left).toBe("195px");
     expect(you.style.top).toBe("320px");
+
+    map.destroy();
+  });
+
+  it("fits a deliberate frame's own results into view once they arrive", () => {
+    const container = mount();
+    const map = createSpotMap(container, {
+      onSelect: vi.fn(),
+      onDirections: vi.fn(),
+    });
+
+    // The user picked an origin up in Vanadislunden; the frame centres on it.
+    const origin = { lat: VANADIS.lat, lon: VANADIS.lon };
+    map.frame(origin);
+    map.render([], origin, null);
+    const you = youAreHere(container)[0];
+    expect(you.style.top).toBe("320px");
+
+    // BJORNS is that pick's own answer, a few km south — far outside the
+    // origin-centred zoom-15 view, so its pin sits off the bottom of the
+    // container until the fit runs. render() draws it; frameResults widens
+    // the view to hold origin and answer together, the delayed half of the
+    // frame.
+    map.render([BJORNS], origin, null);
+    map.frameResults([BJORNS], origin);
+
+    // The pair is now framed: the dot has left the midpoint it was centred
+    // on, and BJORNS' pin — off-screen a moment ago — is on screen.
+    expect(youAreHere(container)[0].style.top).not.toBe("320px");
+    const pin = pinNamed(container, BJORNS.name!);
+    expect(parseFloat(pin.style.left)).toBeGreaterThanOrEqual(0);
+    expect(parseFloat(pin.style.left)).toBeLessThanOrEqual(390);
+    expect(parseFloat(pin.style.top)).toBeGreaterThanOrEqual(0);
+    expect(parseFloat(pin.style.top)).toBeLessThanOrEqual(640);
+
+    map.destroy();
+  });
+
+  it("drops a frame's owed fit once the user takes the viewport", () => {
+    const container = mount();
+    const map = createSpotMap(container, {
+      onSelect: vi.fn(),
+      onDirections: vi.fn(),
+    });
+
+    const origin = { lat: VANADIS.lat, lon: VANADIS.lon };
+    map.frame(origin);
+    map.render([], origin, null);
+    const before = placedAt(youAreHere(container)[0]);
+
+    // The user grabs the map before the answer lands — a double-click zoom,
+    // Leaflet's own gesture, applied synchronously in jsdom (see "leaves a
+    // viewport the user has taken alone when the results arrive").
+    const canvas = container.querySelector(".spot-map-canvas")!;
+    canvas.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    const afterZoom = placedAt(youAreHere(container)[0]);
+    expect(afterZoom).not.toBe(before);
+
+    // The pick's answer arrives, a few km south. The user owns the viewport
+    // now, so the fit the frame was owed stands down rather than yank them
+    // off the ground they chose — the view stays exactly where they left it.
+    map.render([BJORNS], origin, null);
+    map.frameResults([BJORNS], origin);
+
+    expect(placedAt(youAreHere(container)[0])).toBe(afterZoom);
+
+    map.destroy();
+  });
+
+  it("moves nothing for a search no deliberate frame preceded", () => {
+    const container = mount();
+    const map = createSpotMap(container, {
+      onSelect: vi.fn(),
+      onDirections: vi.fn(),
+    });
+
+    // A plain GPS-startup search: frameOnce centres on the user, and no
+    // frame() was ever called, so nothing is owed a fit.
+    map.render([], SLUSSEN, null);
+    const before = placedAt(youAreHere(container)[0]);
+
+    // The machine offers a fit on every answer; with none owed, the map
+    // leaves the viewport frameOnce already set rather than snatch it.
+    map.frameResults([VANADIS], SLUSSEN);
+
+    expect(placedAt(youAreHere(container)[0])).toBe(before);
+
+    map.destroy();
+  });
+
+  it("holds the frame's centred view when its search finds nothing", () => {
+    const container = mount();
+    const map = createSpotMap(container, {
+      onSelect: vi.fn(),
+      onDirections: vi.fn(),
+    });
+
+    const origin = { lat: VANADIS.lat, lon: VANADIS.lon };
+    map.frame(origin);
+    map.render([], origin, null);
+    const before = placedAt(youAreHere(container)[0]);
+
+    // The picked origin's search comes back empty. There is nothing to widen
+    // the view for, so the interim "here you are, nothing nearby" centre the
+    // frame set stays put.
+    map.frameResults([], origin);
+
+    expect(placedAt(youAreHere(container)[0])).toBe(before);
 
     map.destroy();
   });
@@ -953,10 +1145,11 @@ describe("frameSpot", () => {
     const map = createSpotMap(container, {
       onSelect: vi.fn(),
       onDirections: vi.fn(),
+      obscuredRight: () => 200,
     });
     // A few hundred metres east of SLUSSEN: close enough that, framed on the
-    // user alone at NEARBY_ZOOM, it lands inside the 390px viewport — but
-    // within the rightmost 200px a caller can say a drawer covers.
+    // user at NEARBY_ZOOM, it lands inside the 390px viewport — but within
+    // the rightmost 200px the callback above says a drawer covers.
     const NEARBY = park({
       id: "way/8002",
       name: "Närliggande hundrastgård",
@@ -970,7 +1163,7 @@ describe("frameSpot", () => {
     const before = parseFloat(pinNamed(container, NEARBY.name!).style.left);
     expect(before).toBeGreaterThan(190); // inside the rightmost 200px of 390
 
-    map.frameSpot({ lat: NEARBY.lat, lon: NEARBY.lon }, SLUSSEN, 200);
+    map.frameSpot({ lat: NEARBY.lat, lon: NEARBY.lon }, SLUSSEN);
 
     const after = parseFloat(pinNamed(container, NEARBY.name!).style.left);
     expect(after).toBeLessThan(190);

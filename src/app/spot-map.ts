@@ -201,6 +201,15 @@ export interface SpotMapOptions {
    * real one.
    */
   today?: Date;
+  /**
+   * How many pixels of the map's right edge are currently covered by chrome
+   * — the results drawer, in practice. Read at the moment of every
+   * programmatic reposition, so each aims at the visible part of the
+   * viewport rather than the whole container. The caller reports zero when
+   * the cover spans the whole map (there is no visible sliver to aim for);
+   * the view re-guards against that anyway. Defaults to "nothing covered".
+   */
+  obscuredRight?: () => number;
 }
 
 export interface SpotMapHandle {
@@ -218,8 +227,14 @@ export interface SpotMapHandle {
    * The one sanctioned exception to "the viewport belongs to the user"
    * (see {@link frameOnce}): the user has just said "look there" — picked a
    * spot, or asked to follow the device again from somewhere else — and
-   * centring on it is the looking. Ordinary movement must never come
-   * through here.
+   * centring on it is the looking. Centring aims at the visible part of the
+   * viewport when chrome covers the map's right edge. Ordinary movement
+   * must never come through here.
+   *
+   * This only centres on the origin — the search it kicks off answers a
+   * moment later, and {@link frameResults} is what widens the view to hold
+   * that answer once it lands, unless the user has taken the viewport in
+   * between.
    */
   frame(position: LatLon): void;
   /**
@@ -229,12 +244,25 @@ export interface SpotMapHandle {
    *
    * Gentler than {@link frame}: a spot already comfortably in view moves
    * nothing, so tapping a visible pin never disturbs a viewport the user has
-   * set. Only when the spot is out of view (or under whatever the caller says
-   * is covering the map's right edge — `obscuredRight` pixels, a desktop
-   * drawer) does the map reposition, fitting spot and user together so the
-   * answer reads as "there, relative to you".
+   * set. Only when the spot is out of view (or under whatever the
+   * creation-time {@link SpotMapOptions.obscuredRight} callback says is
+   * covering the map's right edge — a desktop drawer) does the map
+   * reposition, fitting spot and user together so the answer reads as
+   * "there, relative to you".
    */
-  frameSpot(spot: LatLon, user: LatLon | null, obscuredRight?: number): void;
+  frameSpot(spot: LatLon, user: LatLon | null): void;
+  /**
+   * Fit a deliberate frame's own search results into view, once they land.
+   *
+   * The delayed second half of {@link frame}: framing an origin centres on it
+   * at once, and this widens the view to hold the answer — origin and results
+   * together, the same fit {@link frameOnce} makes at startup. Does nothing
+   * unless a {@link frame} is still owed a fit: a search no frame preceded, or
+   * one whose viewport the user has since claimed by hand, moves nothing. An
+   * empty answer also moves nothing — the frame's own centred view is the
+   * honest "nothing nearby". Carries the `frame-results` effect.
+   */
+  frameResults(spots: readonly LatLon[], position: LatLon): void;
   /** Tears the map down and gives the container back as it was found. Safe to
    *  call more than once. */
   destroy(): void;
@@ -310,7 +338,7 @@ export function planMarkers(
  */
 export function createSpotMap(
   container: HTMLElement,
-  { onSelect, onDirections, today }: SpotMapOptions,
+  { onSelect, onDirections, today, obscuredRight = () => 0 }: SpotMapOptions,
 ): SpotMapHandle {
   container.classList.add("spot-map");
 
@@ -361,6 +389,13 @@ export function createSpotMap(
    *  and re-centring on each would drag the map out from under a user who
    *  had started looking around. */
   let centredOnUser = false;
+  /** Whether a deliberate {@link SpotMapHandle.frame} is still owed a fit of
+   *  its search's own results. A frame centres on the origin at once, but its
+   *  nearest park lands a moment later and can fall outside that view; the
+   *  {@link SpotMapHandle.frameResults} that follows honours this and fits
+   *  them together. Cleared by that fit, and cleared by the user's own hand —
+   *  a pan between the frame and its answer keeps the ground they chose. */
+  let pendingFit = false;
   /** True while this module is itself moving the map, so the claim listener
    *  below can tell its own repositions from the user's hand. */
   let repositioning = false;
@@ -378,6 +413,33 @@ export function createSpotMap(
     }
   }
 
+  /** How much of the viewport's right edge is covered right now. A cover as
+   *  wide as the map means there is no visible sliver to aim for — the
+   *  caller is expected to have moved a full-width cover aside (the phone
+   *  drawer closes on select); failing that, the full viewport is the only
+   *  honest target left. */
+  function visibleInset(size: L.Point): number {
+    const covered = obscuredRight();
+    return covered < size.x ? covered : 0;
+  }
+
+  /**
+   * The centre the map must sit at for `position` to land in the middle of
+   * the *visible* (uncovered) width: shifting the centre half the inset east
+   * places the target half the inset west of the container's midline — the
+   * middle of the uncovered part. A pre-layout zero size yields inset 0 and
+   * the plain centre.
+   */
+  function visibleCentre(position: LatLon, zoom: number): L.LatLng {
+    const size = map.getSize();
+    const inset = visibleInset(size);
+    if (inset === 0) return L.latLng(position.lat, position.lon);
+    return map.unproject(
+      map.project([position.lat, position.lon], zoom).add([inset / 2, 0]),
+      zoom,
+    );
+  }
+
   // Any movement this module did not make is the user taking the viewport:
   // from then on it is theirs, and the opening frame — which may still be
   // waiting for the first results — stands down rather than yank the map
@@ -387,7 +449,13 @@ export function createSpotMap(
   // through — rotating the phone mid-search at the world view — which costs
   // only the opening fit, never a viewport the user has set.)
   map.on("movestart zoomstart", () => {
-    if (!repositioning) framed = true;
+    if (!repositioning) {
+      framed = true;
+      // The user's hand also cancels any fit a deliberate frame was still
+      // owed: they have chosen where to look, and the search's answer
+      // arriving next must not tug them off it.
+      pendingFit = false;
+    }
   });
 
   /**
@@ -613,6 +681,41 @@ export function createSpotMap(
   }
 
   /**
+   * Fit the user's position and a set of results into the viewport together,
+   * instantly, both clear of the padding and of whatever covers the map's
+   * right edge.
+   *
+   * The shared body of the two framings that show an answer: the opening
+   * frame's second step ({@link frameOnce}) and a deliberate frame's delayed
+   * fit ({@link SpotMapHandle.frameResults}). Instant for the reason
+   * {@link SpotMapHandle.frameSpot} gives — an animated fit is silently
+   * swallowed while the centring's own zoom is still pending
+   * (Map._tryAnimatedZoom returns early), exactly the fast-answer case a
+   * cached or offline dataset makes common. The covered strip is real map the
+   * fit must not aim into, so it joins the ordinary padding on the right.
+   */
+  function fitToResults(position: LatLon, spots: readonly LatLon[]): void {
+    const size = map.getSize();
+    // The user is always in frame: a map of dog parks that does not show
+    // where the user is standing cannot be read as distances.
+    const bounds = L.latLngBounds([[position.lat, position.lon]]);
+    for (const spot of spots) {
+      bounds.extend([spot.lat, spot.lon]);
+    }
+    reposition(() =>
+      map.fitBounds(bounds, {
+        paddingTopLeft: FIT_PADDING,
+        paddingBottomRight: [
+          FIT_PADDING[0] + visibleInset(size),
+          FIT_PADDING[1],
+        ],
+        maxZoom: NEARBY_ZOOM,
+        animate: false,
+      }),
+    );
+  }
+
+  /**
    * Point the map at the results — once, on the first render that has any.
    *
    * The first render with a position is usually the *searching* one: the
@@ -647,32 +750,14 @@ export function createSpotMap(
       if (!centredOnUser) {
         centredOnUser = true;
         reposition(() =>
-          map.setView([position.lat, position.lon], NEARBY_ZOOM),
+          map.setView(visibleCentre(position, NEARBY_ZOOM), NEARBY_ZOOM),
         );
       }
       return;
     }
 
     framed = true;
-
-    // The user is always in frame: a map of dog parks that does not show where
-    // the user is standing cannot be read as distances.
-    const bounds = L.latLngBounds([[position.lat, position.lon]]);
-    for (const spot of spots) {
-      bounds.extend([spot.lat, spot.lon]);
-    }
-
-    // Instant for frameSpot's reason: the centring above starts an animated
-    // zoom, and while that is pending an animated fit would be silently
-    // swallowed (Map._tryAnimatedZoom returns early) — exactly the fast-answer
-    // case a cached or offline dataset makes common.
-    reposition(() =>
-      map.fitBounds(bounds, {
-        padding: FIT_PADDING,
-        maxZoom: NEARBY_ZOOM,
-        animate: false,
-      }),
-    );
+    fitToResults(position, spots);
   }
 
   return {
@@ -716,13 +801,20 @@ export function createSpotMap(
     frame(position) {
       if (destroyed) return;
 
-      reposition(() => map.setView([position.lat, position.lon], NEARBY_ZOOM));
+      reposition(() =>
+        map.setView(visibleCentre(position, NEARBY_ZOOM), NEARBY_ZOOM),
+      );
       // The frame is spent: from here the viewport belongs to the user again,
       // exactly as after frameOnce.
       framed = true;
+      // ...but this frame only centred on the origin. Its search's own answer
+      // is still to land, and the nearest park can fall outside this view, so
+      // the frameResults that follows is owed a fit of the two together —
+      // until the user's own hand claims the viewport first (movestart above).
+      pendingFit = true;
     },
 
-    frameSpot(spot, user, obscuredRight = 0) {
+    frameSpot(spot, user) {
       if (destroyed) return;
 
       const target = L.latLng(spot.lat, spot.lon);
@@ -746,11 +838,7 @@ export function createSpotMap(
         return;
       }
 
-      // A cover as wide as the map means there is no visible sliver to aim
-      // for — the caller is expected to have moved the cover aside (the
-      // phone drawer closes on select); failing that, the full viewport is
-      // the only honest target left.
-      const inset = obscuredRight < size.x ? obscuredRight : 0;
+      const inset = visibleInset(size);
 
       /**
        * The minimal instant pan that brings the open callout's card wholly
@@ -841,6 +929,24 @@ export function createSpotMap(
       // The padding above should have made this a no-op; a maxZoom-bound
       // fit of two very close points is the one case with slack left.
       nudgeCalloutIntoView();
+    },
+
+    frameResults(spots, position) {
+      if (destroyed) return;
+      // Honoured only when a deliberate frame is still owed a fit: a plain
+      // search that no frame preceded, or one whose viewport the user has
+      // since claimed by hand, finds nothing owed here and moves nothing.
+      // This is what lets the machine emit the effect on every search without
+      // it ever snatching a viewport it has no business touching.
+      if (!pendingFit) return;
+      pendingFit = false;
+
+      // Nothing to fit: the interim centre the frame already set — "here is
+      // where you pointed, and nothing is nearby" — is the honest answer, so
+      // it stands.
+      if (spots.length === 0) return;
+
+      fitToResults(position, spots);
     },
 
     destroy() {
