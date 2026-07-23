@@ -18,6 +18,7 @@ import type { Phase } from "./state-machine";
 import type { LocationErrorCode } from "./location";
 import type { PlaceProviderError } from "./place-provider";
 import type { LatLon } from "./types";
+import { createContributionInvitation } from "./attribution";
 import { formatDistance } from "./format";
 import { mappingDensityAt } from "./mapping-density";
 
@@ -145,6 +146,13 @@ interface StatusContent {
   status: Phase["kind"];
   title: string;
   detail?: string;
+  /**
+   * Append the add-it-to-OSM invitation (attribution.ts) after the detail.
+   * Set exactly where the state is a data gap the reader might personally
+   * fill — the empty answers — and never on failures, where nothing is
+   * missing and the invitation would misdirect the blame.
+   */
+  invite?: boolean;
   actions: StatusAction[];
 }
 
@@ -279,6 +287,11 @@ function needsPosition(reason: LocationErrorCode): StatusContent {
  * this one likely is. Same two variants of one card, not a warning banner:
  * nothing is broken, and dressing honesty up as an error would teach users
  * to dismiss it.
+ *
+ * Both variants end on "nobody has added it yet", and both carry the
+ * invitation that is the actionable half of that sentence (docs/spec.md
+ * §4.3): the reader standing in front of an unmapped dog park is the one
+ * person who can make this answer better.
  */
 function empty(searchedRadiusM: number, position: LatLon): StatusContent {
   const density = mappingDensityAt(position);
@@ -286,6 +299,7 @@ function empty(searchedRadiusM: number, position: LatLon): StatusContent {
     presence: "takeover" as const,
     signature: `empty:${density}:${searchedRadiusM}`,
     status: "empty" as const,
+    invite: true,
     // No retry: the same search would return the same nothing. Looking from
     // somewhere else is the only move that changes the answer.
     actions: [pick(SEARCH_ELSEWHERE)],
@@ -479,6 +493,13 @@ function buildCard(
     detail.className = "status-detail";
     detail.textContent = content.detail;
     card.append(detail);
+  }
+
+  if (content.invite) {
+    const invite = document.createElement("p");
+    invite.className = "status-invite";
+    invite.append(createContributionInvitation("dog park"));
+    card.append(invite);
   }
 
   if (content.actions.length > 0) {

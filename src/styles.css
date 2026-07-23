@@ -281,6 +281,14 @@ body {
   font-size: 0.9375rem;
 }
 
+/* The add-it-to-OSM invitation under an empty answer: reads with the detail
+   above it, not as a second headline. */
+.status-invite {
+  margin: 0.5rem 0 0;
+  color: #444;
+  font-size: 0.9375rem;
+}
+
 .status-actions {
   display: flex;
   flex-wrap: wrap;
@@ -301,6 +309,11 @@ body {
   border-radius: 0.5rem;
   font: inherit;
   cursor: pointer;
+
+  /* Positioned so the buttons paint above the invitation link's invisible
+     thumb halo when the two sit close — a tap on the button must be the
+     button's. */
+  position: relative;
 }
 
 .status-action-primary {
@@ -324,8 +337,9 @@ body {
  * Layer toggle (src/app/layer-toggle.ts)
  *
  * A chip that changes what the list below it holds, and one quiet line of
- * honesty under it when there is something to admit — looking, found nothing
- * within how far, or failed with a retry (docs/spec.md §3).
+ * honesty under it when there is something to say — looking, found what and
+ * how near, found nothing within how far, or failed with a retry
+ * (docs/spec.md §3).
  *
  * Phase 3 plans more layers (§4.4), so these rules describe "a chip" rather
  * than "the bathing chip": the next one is another chip in the same row.
@@ -370,8 +384,11 @@ body {
   outline-offset: 2px;
 }
 
-/* Its own line under the chip, and never more than one: the note exists to
-   admit something, and an admission that needs two lines needs better words. */
+/* Its own line under the chip — usually one, because the note exists to
+   admit something and an admission that needs two lines needs better words.
+   The one licensed exception is the admission that recruits the fix: "no
+   bathing spots within 25 km" plus the add-it-to-OSM invitation wraps on a
+   phone, and cutting either half would cut the honesty or the way out. */
 .layer-toggle-note {
   flex-basis: 100%;
   margin: 0;
@@ -582,6 +599,26 @@ body {
 
 .attribution a {
   color: #1a6b3c;
+}
+
+/* The add-it-to-OSM invitation (attribution.ts), shared by the bathing note
+   and the empty-state card: the same green link language as the retry beside
+   it, with the same invisible thumb target — a word in a sentence cannot be
+   44px tall without prising the sentence apart. */
+.contribute-invitation a {
+  position: relative;
+  color: #1a6b3c;
+}
+
+.contribute-invitation a::after {
+  content: "";
+  position: absolute;
+  inset: -0.85rem -0.5rem;
+}
+
+.contribute-invitation a:focus-visible {
+  outline: 3px solid #1a6b3c;
+  outline-offset: 2px;
 }
 
 /* ---------------------------------------------------------------------------

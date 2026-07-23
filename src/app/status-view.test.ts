@@ -343,6 +343,46 @@ describe("renderStatus, having found nothing", () => {
     expect(words(container)).toContain("No dog parks within 25 km");
     expect(words(container)).not.toContain("mapped within");
   });
+
+  it("invites the fix when it found nothing in well-mapped ground", () => {
+    const container = mount();
+    const phase: Phase = {
+      kind: "empty",
+      position: SLUSSEN,
+      searchedRadiusM: 25_000,
+    };
+
+    renderStatus(container, phase, callbacks());
+
+    const invite = container.querySelector("p.status-invite");
+    if (!invite) throw new Error("an empty answer should invite the fix");
+    expect(invite.textContent).toContain("Know a dog park that’s missing?");
+    const link = invite.querySelector("a");
+    if (!link) throw new Error("the invitation should link out to OSM");
+    expect(link.getAttribute("href")).toBe(
+      "https://www.openstreetmap.org/fixthemap",
+    );
+    expect(link.target).toBe("_blank");
+    expect(link.rel).toBe("noopener noreferrer");
+    expect(link.textContent).toBe("Add it to OpenStreetMap");
+  });
+
+  it("invites the fix when it found nothing in thinly-mapped ground too", () => {
+    const container = mount();
+    const phase: Phase = {
+      kind: "empty",
+      position: MONTMARTRE,
+      searchedRadiusM: 25_000,
+    };
+
+    renderStatus(container, phase, callbacks());
+
+    // Lighter touch here: the well-mapped case above already pins the link's
+    // href, target, rel and text, and those do not vary with the density
+    // split — only the title and detail around them do.
+    expect(container.querySelector(".contribute-invitation")).not.toBeNull();
+    expect(words(container)).toContain("Know a dog park");
+  });
 });
 
 describe("renderStatus, after a failed lookup", () => {
@@ -500,6 +540,14 @@ describe("renderStatus, after a failed lookup", () => {
 
     expect(words(container)).toContain("did not answer in time");
     expect(handlers.onRetry).toHaveBeenCalled();
+  });
+
+  it("does not recruit mappers over a failure, since nothing is missing — the service broke", () => {
+    const container = mount();
+
+    renderStatus(container, failedPhase(failure("timeout")), callbacks());
+
+    expect(container.querySelector(".contribute-invitation")).toBeNull();
   });
 });
 

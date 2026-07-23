@@ -12,6 +12,7 @@
 // doesn't change what the app is doing isn't the machine's business.
 
 import {
+  externalLink,
   ODBL_URL,
   OSM_CONTRIBUTE_URL,
   OSM_COPYRIGHT_URL,
@@ -25,23 +26,6 @@ let activeTeardown: (() => void) | null = null;
 export function hideAbout(): void {
   activeTeardown?.();
   activeTeardown = null;
-}
-
-/**
- * A link that leaves the app, opened in a new tab.
- *
- * Same rationale as attribution.ts's externalLink, kept as its own copy here
- * rather than shared: this is a PWA holding a session's position and results,
- * and navigating away in the same tab would throw them out to read a licence
- * page.
- */
-function externalLink(href: string, text: string): HTMLAnchorElement {
-  const a = document.createElement("a");
-  a.href = href;
-  a.textContent = text;
-  a.target = "_blank";
-  a.rel = "noopener noreferrer";
-  return a;
 }
 
 /** The data section: where the places come from, and how to fix a gap. */
