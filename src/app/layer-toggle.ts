@@ -229,7 +229,7 @@ function renderNote(
   if (note.invite) {
     // Inside the note element, so the invitation is announced together with
     // the finding it follows from.
-    element.append(" ", createContributionInvitation("hundbad"));
+    element.append(" ", createContributionInvitation("bathing spot"));
   }
 
   if (note.retry) {

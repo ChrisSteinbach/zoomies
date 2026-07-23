@@ -108,8 +108,8 @@ export function externalLink(href: string, text: string): HTMLAnchorElement {
 }
 
 /**
- * The invitation to fix a data gap: "Know a hundbad that’s missing? Add it
- * to OpenStreetMap."
+ * The invitation to fix a data gap: "Know a bathing spot that’s missing?
+ * Add it to OpenStreetMap."
  *
  * "Fewer results rather than confident wrong ones" (docs/spec.md §3) leaves
  * the app honest but empty-handed exactly where OSM is thin, and §4.3 says

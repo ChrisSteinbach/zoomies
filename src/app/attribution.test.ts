@@ -77,15 +77,15 @@ describe("createAttribution", () => {
 
 describe("createContributionInvitation", () => {
   it("says exactly what's missing, in the caller's words", () => {
-    const invitation = createContributionInvitation("hundbad");
+    const invitation = createContributionInvitation("bathing spot");
 
     expect(invitation.textContent).toBe(
-      "Know a hundbad that’s missing? Add it to OpenStreetMap.",
+      "Know a bathing spot that’s missing? Add it to OpenStreetMap.",
     );
   });
 
   it("carries the class its callers render it by", () => {
-    const invitation = createContributionInvitation("hundbad");
+    const invitation = createContributionInvitation("bathing spot");
 
     // layer-toggle.ts appends this inside a live-region note and
     // status-view.ts inside a card; both find it again, and their tests
@@ -94,7 +94,7 @@ describe("createContributionInvitation", () => {
   });
 
   it("links out to the fix-the-map page, safely", () => {
-    const invitation = createContributionInvitation("hundbad");
+    const invitation = createContributionInvitation("bathing spot");
 
     const link = invitation.querySelector("a");
     if (!link) throw new Error("the invitation should carry a link");
