@@ -16,7 +16,14 @@ import type { DogSpot, DogSpotKind, LatLon } from "./types";
 import { worldZoomBounds } from "./map-bounds";
 import { OSM_TILE_ATTRIBUTION } from "./attribution";
 import { locationPinIcon } from "./map-icons";
-import { spotLabel } from "./spot-list";
+import {
+  BATHING_BADGE,
+  PROVENANCE_LABELS,
+  seasonalCaption,
+  spotLabel,
+} from "./spot-list";
+import { haversineMeters } from "./geo";
+import { formatDistance } from "./format";
 
 const OSM_TILE_URL = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
 
@@ -41,6 +48,21 @@ const FIT_PADDING: [number, number] = [40, 40];
 
 /** Draws the selected pin over its neighbours, so a cluster cannot bury it. */
 const SELECTED_Z_OFFSET = 1000;
+
+/** Lifts the callout's tip clear of the selected pin it is anchored to — the
+ *  selected teardrop stands 42px on its point, and the callout should sit on
+ *  its head rather than over it. */
+const CALLOUT_OFFSET: [number, number] = [0, -38];
+
+/** Narrower than Leaflet's 300px default: the callout carries a name, a
+ *  distance and a button, and on a 375px screen it must not be the thing
+ *  that hides the map it is annotating. */
+const CALLOUT_MAX_WIDTH = 240;
+
+/** What a frame must clear above the selected pin's tip beyond the card
+ *  itself: the offset lifting the card off the pin, the popup's ~20px tip
+ *  bridging that gap, and a breath of margin to the viewport edge. */
+const CALLOUT_HEADROOM = -CALLOUT_OFFSET[1] + 28;
 
 /**
  * Markers are drawn as inline data URIs rather than files from
@@ -161,9 +183,24 @@ export interface SpotMapOptions {
   /**
    * A pin was tapped. `null` when the tap cleared the selection — tapping the
    * already-selected pin deselects it, exactly as tapping the already-selected
-   * row does in the list.
+   * row does in the list. Dismissing the callout (its ×, Esc, a tap on the
+   * bare map) reports `null` through here too: the callout is the selection
+   * made visible, so closing it *is* deselecting.
    */
   onSelect: (id: string | null) => void;
+  /**
+   * The callout's "open in maps" button was tapped. The same shape as the
+   * list's — this view builds no URL and reads no `navigator`; what
+   * directions mean is decided where it always was.
+   */
+  onDirections: (id: string) => void;
+  /**
+   * The date the callout's seasonal caption is decided against. Defaults to
+   * the day of each render — injectable for the reason SpotListOptions gives:
+   * "banned *now*" is a claim about the clock, and a test must not read the
+   * real one.
+   */
+  today?: Date;
 }
 
 export interface SpotMapHandle {
@@ -185,6 +222,19 @@ export interface SpotMapHandle {
    * through here.
    */
   frame(position: LatLon): void;
+  /**
+   * Bring a selected spot into view, with the user's position alongside for
+   * scale — the other sanctioned reposition, carrying the `frame-spot`
+   * effect.
+   *
+   * Gentler than {@link frame}: a spot already comfortably in view moves
+   * nothing, so tapping a visible pin never disturbs a viewport the user has
+   * set. Only when the spot is out of view (or under whatever the caller says
+   * is covering the map's right edge — `obscuredRight` pixels, a desktop
+   * drawer) does the map reposition, fitting spot and user together so the
+   * answer reads as "there, relative to you".
+   */
+  frameSpot(spot: LatLon, user: LatLon | null, obscuredRight?: number): void;
   /** Tears the map down and gives the container back as it was found. Safe to
    *  call more than once. */
   destroy(): void;
@@ -260,7 +310,7 @@ export function planMarkers(
  */
 export function createSpotMap(
   container: HTMLElement,
-  { onSelect }: SpotMapOptions,
+  { onSelect, onDirections, today }: SpotMapOptions,
 ): SpotMapHandle {
   container.classList.add("spot-map");
 
@@ -305,6 +355,164 @@ export function createSpotMap(
    *  viewport belongs to the user. */
   let framed = false;
   let destroyed = false;
+
+  /**
+   * The callout: one popup, moved from pin to pin as the selection moves.
+   *
+   * Deliberately *not* bound to any marker — Leaflet's own click-to-open
+   * would decide what a tap means without asking the machine, and the
+   * selection must stay the one model both surfaces render from. Everything
+   * that opens, moves or closes this popup is {@link updateCallout}, working
+   * from the state each render hands in.
+   */
+  const callout = L.popup({
+    className: "spot-map-callout-popup",
+    offset: CALLOUT_OFFSET,
+    maxWidth: CALLOUT_MAX_WIDTH,
+    // Leaflet's own close-on-map-click acts on `preclick` — delivered before
+    // a tapped marker's click. Left on, tapping the selected pin closed the
+    // callout and cleared the selection first, so the marker handler then
+    // read "nothing selected" and re-selected: the toggle could never turn
+    // off. Dismissal by tapping the bare map is wired explicitly below, on
+    // plain `click`, which a marker tap never reaches (markers do not
+    // bubble their mouse events to the map).
+    closeOnClick: false,
+    // Leaflet's auto-pan fires the moment the popup opens — during render,
+    // *before* the frame-spot effect runs — and a big enough pan teleports
+    // the selected spot into view on its own. The frame that was meant to
+    // show spot and user together then judges the spot already visible and
+    // stands down: callout neatly in frame, user pin stranded off screen
+    // (seen driving the app). Positioning at selection time has exactly one
+    // owner, frameSpot; the part of auto-pan worth keeping lives there, in
+    // nudgeCalloutIntoView.
+    autoPan: false,
+  });
+  /** Which spot the callout is on, `null` when closed. */
+  let calloutSpotId: string | null = null;
+  /** What the callout currently says (spot + formatted distance), so the
+   *  every-second render rebuilds its DOM only when the words change. */
+  let calloutKey: string | null = null;
+  /** True while {@link updateCallout} itself is opening, moving or closing
+   *  the popup, so the `remove` listener below can tell our own bookkeeping
+   *  from the user dismissing it. */
+  let syncingCallout = false;
+
+  callout.on("remove", () => {
+    // The popup has dismissals of its own — the × and Esc — and each must
+    // clear the selection, or the callout falls out of lockstep with the
+    // list's highlight. Our own closes are fenced off by the flag, and
+    // teardown must not dispatch into an app being destroyed.
+    if (syncingCallout || destroyed || calloutSpotId === null) return;
+    calloutSpotId = null;
+    calloutKey = null;
+    onSelect(null);
+  });
+
+  // A tap on the bare map walks away from the answer: the selection clears,
+  // which closes the callout with it. Only ever fired for the map itself —
+  // pins swallow their own taps, and the callout's card does not let clicks
+  // through — and only reported when there is a selection to walk away from.
+  map.on("click", () => {
+    if (shownSelectedId !== null) onSelect(null);
+  });
+
+  /**
+   * The callout's card: the same three facts a list row leads with — name,
+   * distance from where the user is standing, the way into the maps app.
+   *
+   * A bathing spot's card also carries the row's two disclosure lines, in the
+   * row's exact words (imported from spot-list.ts). A card with a directions
+   * button is an invitation to go, and it must not read more confident than
+   * the list it stands in for (docs/spec.md §4.5.3).
+   */
+  function buildCallout(spot: DogSpot, meters: number): HTMLElement {
+    const label = spotLabel(spot);
+
+    const content = document.createElement("div");
+    content.className = "spot-map-callout";
+
+    const name = document.createElement("p");
+    name.className = "spot-map-callout-name";
+    name.textContent = label;
+
+    if (spot.kind === "bathing_spot") {
+      const badge = document.createElement("span");
+      badge.className = "spot-map-callout-kind";
+      badge.textContent = BATHING_BADGE;
+      name.append(" ", badge);
+    }
+
+    const distance = document.createElement("p");
+    distance.className = "spot-map-callout-distance";
+    distance.textContent = formatDistance(meters);
+
+    content.append(name, distance);
+
+    if (spot.kind === "bathing_spot") {
+      const provenance = document.createElement("p");
+      provenance.className = "spot-map-callout-provenance";
+      provenance.textContent = PROVENANCE_LABELS[spot.provenance];
+
+      const caveat = document.createElement("p");
+      caveat.className = "spot-map-callout-caveat";
+      const seasonal = seasonalCaption(spot, today ?? new Date());
+      caveat.textContent = seasonal.text;
+      // The card is marked, not just the caption, exactly as the row is: a
+      // ban in force is the one thing here that can cost the reader a fine.
+      if (seasonal.bannedNow) content.dataset.banned = "true";
+
+      content.append(provenance, caveat);
+    }
+
+    const directions = document.createElement("button");
+    directions.type = "button";
+    directions.className = "spot-map-callout-directions";
+    // The name goes in the accessible name for the list's reason: every
+    // card's button says the same three words.
+    directions.setAttribute("aria-label", `Open in maps: ${label}`);
+    directions.textContent = "Open in maps";
+    directions.addEventListener("click", () => {
+      onDirections(spot.id);
+    });
+
+    content.append(directions);
+    return content;
+  }
+
+  /**
+   * Hold the callout to the selection: open on the selected spot, moved when
+   * the selection moves, gone when it clears.
+   *
+   * Called on every render, so it must be cheap when nothing changed: the
+   * content is keyed on what it says, and a GPS tick that does not change the
+   * formatted distance touches nothing. The anchor is re-asserted each time
+   * because a spot's own position can shift between queries (see
+   * {@link planMarkers} on moves), and an anchor is too cheap to diff.
+   */
+  function updateCallout(spot: DogSpot | null, position: LatLon): void {
+    syncingCallout = true;
+    try {
+      if (!spot) {
+        calloutSpotId = null;
+        calloutKey = null;
+        map.closePopup(callout);
+        return;
+      }
+
+      const meters = haversineMeters(position, spot);
+      const key = `${spot.id}\n${formatDistance(meters)}`;
+      if (key !== calloutKey) {
+        callout.setContent(buildCallout(spot, meters));
+        calloutKey = key;
+      }
+
+      callout.setLatLng([spot.lat, spot.lon]);
+      calloutSpotId = spot.id;
+      if (!callout.isOpen()) callout.openOn(map);
+    } finally {
+      syncingCallout = false;
+    }
+  }
 
   function addPin(spot: DogSpot, selectedId: string | null): void {
     const selected = spot.id === selectedId;
@@ -434,6 +642,15 @@ export function createSpotMap(
       }
 
       applySelection(selectedId);
+      // The machine has already vouched that a selected id is visible
+      // (normalizeSelection), so a miss here is only ever a render older than
+      // the state it was called with — closing the callout is right anyway.
+      updateCallout(
+        selectedId === null
+          ? null
+          : (spots.find((spot) => spot.id === selectedId) ?? null),
+        position,
+      );
       frameOnce(spots, position);
     },
 
@@ -446,12 +663,133 @@ export function createSpotMap(
       framed = true;
     },
 
+    frameSpot(spot, user, obscuredRight = 0) {
+      if (destroyed) return;
+
+      const target = L.latLng(spot.lat, spot.lon);
+      const size = map.getSize();
+
+      // Every move below says `animate: false`, deliberately: an animated
+      // zoom only completes on a CSS transitionend Leaflet waits for, and
+      // while one is pending every further zoom-changing setView is silently
+      // swallowed (Map._tryAnimatedZoom returns early). Headless browsers
+      // and backgrounded tabs really do sit on that event — driving the app
+      // under Playwright, a selection's frame vanished without a trace this
+      // way. A deliberate "look there" that lands instantly beats one that
+      // sometimes never lands.
+      const instant = { animate: false } as const;
+
+      // Pre-layout there is no viewport to test against or fit into: point
+      // straight at the spot, as frameOnce's fallback points at the user.
+      if (size.x <= 0 || size.y <= 0) {
+        framed = true;
+        map.setView(target, NEARBY_ZOOM, instant);
+        return;
+      }
+
+      // A cover as wide as the map means there is no visible sliver to aim
+      // for — the caller is expected to have moved the cover aside (the
+      // phone drawer closes on select); failing that, the full viewport is
+      // the only honest target left.
+      const inset = obscuredRight < size.x ? obscuredRight : 0;
+
+      /**
+       * The minimal instant pan that brings the open callout's card wholly
+       * into the visible part of the viewport, pin and all.
+       *
+       * The sanctioned remnant of Leaflet's auto-pan (switched off on the
+       * popup itself — see its options): when the viewport stays because the
+       * pin is already in view, a pin near an edge still wears its card half
+       * off screen, and this shifts both inward by exactly the deficit. The
+       * card hangs over its anchor — half its width each side, its height
+       * plus the tip and offset above — so keeping that rectangle in view
+       * can only move the pin further *into* the viewport, never out.
+       */
+      function nudgeCalloutIntoView(): void {
+        const card = callout.isOpen() ? callout.getElement() : undefined;
+        if (!card) return;
+        const width = card.offsetWidth;
+        const height = card.offsetHeight;
+        if (width === 0 || height === 0) return;
+
+        const margin = 8;
+        const anchor = map.latLngToContainerPoint(target);
+        const left = anchor.x - width / 2;
+        const right = anchor.x + width / 2;
+        const top = anchor.y - height - CALLOUT_HEADROOM;
+
+        // panBy moves the viewport, so content shifts the other way: a
+        // positive x here sends the card leftwards.
+        let dx = 0;
+        if (left < margin) dx = left - margin;
+        else if (right > size.x - inset - margin) {
+          dx = right - (size.x - inset - margin);
+        }
+        const dy = top < margin ? top - margin : 0;
+
+        if (dx !== 0 || dy !== 0) map.panBy([dx, dy], { animate: false });
+      }
+
+      // Already comfortably in view — clear of the edges and of whatever
+      // covers the right — means there is nothing to look towards, and the
+      // viewport belongs to the user (see frameOnce). This is what keeps a
+      // tap on a visible pin from yanking away a zoom the user chose. Only
+      // the card gets its nudge.
+      const point = map.latLngToContainerPoint(target);
+      const [padX, padY] = FIT_PADDING;
+      if (
+        point.x >= padX &&
+        point.x <= size.x - inset - padX &&
+        point.y >= padY &&
+        point.y <= size.y - padY
+      ) {
+        nudgeCalloutIntoView();
+        return;
+      }
+
+      framed = true;
+
+      if (!user) {
+        map.setView(target, NEARBY_ZOOM, instant);
+        nudgeCalloutIntoView();
+        return;
+      }
+
+      // The callout is part of the answer, so the fit leaves room for the
+      // card riding the selected pin — measured live, because its height
+      // varies (a bathing card carries two more lines) and nothing else
+      // re-adjusts it after the reposition. Unmeasurable (closed, or a test
+      // DOM with no layout) means zero, which leaves the plain padding.
+      const card = callout.isOpen() ? callout.getElement() : undefined;
+      const sidePad = card ? Math.max(padX, card.offsetWidth / 2 + 8) : padX;
+      const topPad = card
+        ? Math.max(padY, card.offsetHeight + CALLOUT_HEADROOM)
+        : padY;
+
+      // Spot and user together: "there, relative to you" is what a selection
+      // asks the map for. The asymmetric padding keeps both out from under a
+      // desktop drawer as well as off the edges.
+      map.fitBounds(L.latLngBounds([target, [user.lat, user.lon]]), {
+        paddingTopLeft: [sidePad, topPad],
+        paddingBottomRight: [sidePad + inset, padY],
+        maxZoom: NEARBY_ZOOM,
+        ...instant,
+      });
+      // The padding above should have made this a no-op; a maxZoom-bound
+      // fit of two very close points is the one case with slack left.
+      nudgeCalloutIntoView();
+    },
+
     destroy() {
       // Lifecycles get re-entrant in practice; a second Leaflet `remove()`
       // would throw.
       if (destroyed) return;
       destroyed = true;
 
+      // `map.remove()` below will detach the popup and fire its `remove`
+      // event; the flag above already keeps that from dispatching, and
+      // unhooking first makes it structural.
+      callout.off();
       pins.clear();
       userMarker = null;
       stopTrackingBounds();

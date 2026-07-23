@@ -43,3 +43,125 @@
 .spot-map-pin-bathing:focus-visible {
   outline-color: #0f5f7a;
 }
+
+/*
+ * The callout the selected pin answers with: name, distance, directions —
+ * the same three facts a list row leads with, in the list's own tints
+ * (src/styles.css), so the two surfaces read as one selection. Leaflet's
+ * popup provides the anchor-and-dismiss machinery; these rules restyle its
+ * card.
+ */
+
+.spot-map-callout-popup .leaflet-popup-content-wrapper {
+  border-radius: 0.75rem;
+}
+
+.spot-map-callout-popup .leaflet-popup-content {
+  /* The right margin leaves room for the × riding the corner. Leaflet's
+     containers carry their own font stack; the card goes back to the
+     app's. */
+  margin: 0.75rem 1.5rem 0.75rem 0.85rem;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+  font-size: 0.875rem;
+  line-height: 1.35;
+}
+
+/* The × is the callout's own dismiss affordance; grown a little towards the
+   44px the app asks of controls, without dominating a small card. */
+.spot-map-callout-popup .leaflet-popup-close-button {
+  width: 2rem;
+  height: 2rem;
+  font-size: 1.25rem;
+  line-height: 2rem;
+}
+
+.spot-map-callout-name {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+
+  /* "Björns Trädgårds hundrastgård" is not a short word here either. */
+  overflow-wrap: break-word;
+}
+
+/* The layer badge, exactly as the list wears it. */
+.spot-map-callout-kind {
+  display: inline-block;
+  padding: 0.05rem 0.4rem;
+  border-radius: 0.75rem;
+  background: #e2eff4;
+  color: #0b4557;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.spot-map-callout-distance {
+  margin: 0.125rem 0 0;
+  color: #555;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A bathing card's two disclosure lines, caption-sized and quiet for the
+   list's reason: the banned case below can only be loud if these are not. */
+.spot-map-callout-provenance,
+.spot-map-callout-caveat {
+  margin: 0.375rem 0 0;
+  color: #555;
+  font-size: 0.8125rem;
+}
+
+.spot-map-callout-caveat {
+  margin-top: 0.125rem;
+}
+
+/* Full width and 44px tall: this button is tapped standing on a pavement
+   with a dog on the other hand. Same green outline as the row's button. */
+.spot-map-callout-directions {
+  width: 100%;
+  min-height: 2.75rem;
+  margin-top: 0.5rem;
+  padding: 0 0.875rem;
+  border: 1px solid #1a6b3c;
+  border-radius: 0.5rem;
+  background: none;
+  color: #1a6b3c;
+  font: inherit;
+  cursor: pointer;
+}
+
+.spot-map-callout-directions:focus-visible {
+  outline: 3px solid #1a6b3c;
+  outline-offset: -3px;
+}
+
+/* A ban in force today marks the whole card, as it marks the whole row —
+   same warm pair, same de-emphasis of everything that is not the warning
+   (the rationale lives with .spot-list-select[data-banned] in styles.css).
+   The card and its tip are painted through :has() because the mark lives on
+   the content inside them; where :has() is unsupported the caveat line below
+   still carries the warning on a white card. */
+.spot-map-callout-popup:has([data-banned="true"])
+  .leaflet-popup-content-wrapper,
+.spot-map-callout-popup:has([data-banned="true"]) .leaflet-popup-tip {
+  background: #fdf1dc;
+}
+
+.spot-map-callout[data-banned="true"] .spot-map-callout-name,
+.spot-map-callout[data-banned="true"] .spot-map-callout-distance,
+.spot-map-callout[data-banned="true"] .spot-map-callout-provenance {
+  color: #6b6259;
+}
+
+.spot-map-callout[data-banned="true"] .spot-map-callout-kind {
+  background: #f2e4cd;
+  color: #6b6259;
+}
+
+.spot-map-callout[data-banned="true"] .spot-map-callout-caveat {
+  color: #8a5000;
+  font-weight: 600;
+}

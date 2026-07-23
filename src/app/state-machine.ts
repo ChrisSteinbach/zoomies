@@ -150,6 +150,18 @@ export type Effect =
    * is the one thing that overrules that.
    */
   | { kind: "frame-map"; position: LatLon }
+  /**
+   * Bring a just-selected spot into view, with the user's position alongside
+   * for scale.
+   *
+   * The selection sibling of `frame-map`: choosing a spot is the user saying
+   * "look there" about a place the map may not be showing, the same class of
+   * deliberate act as picking an origin — which is why it may move a viewport
+   * that otherwise belongs to the user. How much looking it takes is the map
+   * view's call: a spot already in view needs none, which is what keeps a tap
+   * on a visible pin from yanking the map away from where the user put it.
+   */
+  | { kind: "frame-spot"; spot: DogSpot; user: LatLon | null }
   | { kind: "open-directions"; spot: DogSpot; origin: LatLon | null };
 
 export interface TransitionResult {
@@ -293,14 +305,28 @@ function decide(state: AppState, event: Event): TransitionResult {
         effects: [{ kind: "watch-location" }],
       };
 
-    case "spot-selected":
+    case "spot-selected": {
       // No phase gate: the renderer only offers selection on rows it drew,
       // and the normalization step clears anything that does not resolve —
       // so an id from either layer is taken at its word here.
+      const next = { ...state, selectedId: event.id };
+      if (event.id === null) return { next, effects: [] };
+
+      // Selecting is also asking to see: the map gets a frame so a spot
+      // chosen from the list shows up even when the viewport is somewhere
+      // else entirely. The lookup spans both layers, exactly as directions
+      // do; an id that resolves to nothing frames nothing, and the
+      // normalization step is what clears it.
+      const spot = visibleSpotsOf(state).find(
+        (candidate) => candidate.id === event.id,
+      );
+      if (!spot) return { next, effects: [] };
+
       return {
-        next: { ...state, selectedId: event.id },
-        effects: [],
+        next,
+        effects: [{ kind: "frame-spot", spot, user: positionOf(state.phase) }],
       };
+    }
 
     case "directions-requested":
       return directionsRequested(state, event.id);

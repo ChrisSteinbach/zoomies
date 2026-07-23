@@ -24,6 +24,16 @@ export interface SpotDrawer {
   close(): void;
   toggle(): void;
   isOpen(): boolean;
+  /**
+   * Put keyboard focus on the handle — the way back in.
+   *
+   * For a caller that closes the drawer out from under the focused control:
+   * leaving focus inside the parked-off-screen panel strands a keyboard user
+   * in furniture they can no longer see, and the next focus-reveal scroll
+   * would drag the shell sideways to show it. The handle is where the
+   * closed drawer keeps its one visible control.
+   */
+  focusHandle(): void;
   /** Removes the drawer and unbinds the gesture. */
   destroy(): void;
 }
@@ -129,6 +139,9 @@ export function createSpotDrawer(container: HTMLElement): SpotDrawer {
     close,
     toggle,
     isOpen,
+    focusHandle() {
+      handle.focus({ preventScroll: true });
+    },
     destroy() {
       destroyGesture();
       panel.remove();

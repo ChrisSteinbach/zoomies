@@ -6,7 +6,9 @@
 // event nobody dispatches, a view nobody re-renders, a stale answer landing on
 // top of a fresh one.
 //
-// jsdom lays nothing out, so nothing here asserts on geometry.
+// jsdom lays nothing out, so nothing here asserts on real geometry — where a
+// test needs the drawer to cover the map or not, it stubs offsetWidth rather
+// than trusting a layout jsdom never performs.
 
 import "./test-dialog-polyfill";
 import { composeApp } from "./compose-app";
@@ -465,6 +467,140 @@ describe("acting on a result", () => {
     root.querySelector<HTMLButtonElement>(".spot-list-directions")!.click();
 
     expect(openUrl).toHaveBeenCalledWith(expect.not.stringContaining("origin"));
+  });
+});
+
+describe("selecting from the list", () => {
+  it("selecting a row steps the sheet aside when it covers the map", async () => {
+    const { root, gps, search } = mount();
+
+    gps.fix(TANTOLUNDEN);
+    await search.answer([TANTO]);
+    // jsdom lays nothing out, so both the drawer and the map report an
+    // offsetWidth of zero — and zero covers zero, exactly as a phone-width
+    // drawer covers the map behind it.
+    root.querySelector<HTMLButtonElement>(".spot-list-select")!.click();
+
+    expect(root.querySelector(".spot-drawer")!.classList.contains("open")).toBe(
+      false,
+    );
+    expect(
+      root.querySelector(".spot-drawer-handle")!.getAttribute("aria-expanded"),
+    ).toBe("false");
+    expect(
+      root.querySelector(".spot-list-select")!.getAttribute("aria-pressed"),
+    ).toBe("true");
+  });
+
+  it("selecting a row keeps the sheet where the map stays visible", async () => {
+    const { root, gps, search } = mount();
+
+    gps.fix(TANTOLUNDEN);
+    await search.answer([TANTO]);
+    // Desktop-shaped geometry: a drawer narrower than the map beside it
+    // leaves a visible sliver, so selecting must not step it aside.
+    Object.defineProperty(root.querySelector(".spot-drawer")!, "offsetWidth", {
+      value: 640,
+      configurable: true,
+    });
+    Object.defineProperty(root.querySelector(".app-map")!, "offsetWidth", {
+      value: 1280,
+      configurable: true,
+    });
+    root.querySelector<HTMLButtonElement>(".spot-list-select")!.click();
+
+    expect(root.querySelector(".spot-drawer")!.classList.contains("open")).toBe(
+      true,
+    );
+  });
+
+  it("hands keyboard focus to the handle when the sheet steps aside", async () => {
+    const { root, gps, search } = mount();
+
+    gps.fix(TANTOLUNDEN);
+    await search.answer([TANTO]);
+    root.querySelector<HTMLButtonElement>(".spot-list-select")!.click();
+
+    // Focus must not stay stranded on a row inside the parked-off-screen
+    // panel: the handle is the closed drawer's one visible control, and the
+    // way back to the list.
+    expect(document.activeElement).toBe(
+      root.querySelector(".spot-drawer-handle"),
+    );
+  });
+
+  it("clearing a selection moves no furniture", async () => {
+    const { root, gps, search } = mount();
+
+    gps.fix(TANTOLUNDEN);
+    await search.answer([TANTO]);
+    root.querySelector<HTMLButtonElement>(".spot-list-select")!.click();
+    root.querySelector<HTMLButtonElement>(".spot-drawer-handle")!.click();
+    // The same row again: selected, so this tap clears it rather than
+    // reselecting — the deselect path never had a covering drawer to close.
+    root.querySelector<HTMLButtonElement>(".spot-list-select")!.click();
+
+    expect(root.querySelector(".spot-drawer")!.classList.contains("open")).toBe(
+      true,
+    );
+    expect(
+      root.querySelector(".spot-list-select")!.getAttribute("aria-pressed"),
+    ).toBe("false");
+  });
+});
+
+describe("the map callout, wired", () => {
+  it("the callout hands the park off to the maps app", async () => {
+    const { root, gps, search, openUrl } = mount();
+
+    gps.fix(TANTOLUNDEN);
+    await search.answer([TANTO]);
+    root.querySelector<HTMLButtonElement>(".spot-list-select")!.click();
+
+    expect(root.querySelector(".spot-map-callout")).not.toBeNull();
+
+    root
+      .querySelector<HTMLButtonElement>(".spot-map-callout-directions")!
+      .click();
+
+    expect(openUrl).toHaveBeenCalledWith(
+      expect.stringContaining(`${TANTO.lat},${TANTO.lon}`),
+    );
+  });
+
+  it("dismissing the callout clears the row's selection", async () => {
+    const { root, gps, search } = mount();
+
+    gps.fix(TANTOLUNDEN);
+    await search.answer([TANTO]);
+    root.querySelector<HTMLButtonElement>(".spot-list-select")!.click();
+    root.querySelector<HTMLElement>(".leaflet-popup-close-button")!.click();
+
+    expect(
+      root.querySelector(".spot-list-select")!.getAttribute("aria-pressed"),
+    ).toBe("false");
+    expect(root.querySelector(".spot-map-callout")).toBeNull();
+  });
+
+  it("tapping the selected pin again clears the selection", async () => {
+    const { root, gps, search } = mount();
+
+    gps.fix(TANTOLUNDEN);
+    await search.answer([TANTO]);
+    root.querySelector<HTMLButtonElement>(".spot-list-select")!.click();
+
+    // Through the whole loop, because the unit test cannot see the race
+    // this once hid: with the callout open, Leaflet's own close-on-click
+    // ran on `preclick` — before the marker's click — so the tap cleared
+    // the selection and then re-selected it, and the toggle never turned
+    // off. Only the rebuilt state after both events tells the truth.
+    const pin = root.querySelector<HTMLElement>(".spot-map-pin")!;
+    pin.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(
+      root.querySelector(".spot-list-select")!.getAttribute("aria-pressed"),
+    ).toBe("false");
+    expect(root.querySelector(".spot-map-callout")).toBeNull();
   });
 });
 

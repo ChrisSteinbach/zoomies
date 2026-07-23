@@ -80,7 +80,10 @@ describe("OSM_TILE_ATTRIBUTION", () => {
       onPick: vi.fn(),
       search: () => Promise.resolve([]),
     });
-    const map = createSpotMap(mapContainer, { onSelect: vi.fn() });
+    const map = createSpotMap(mapContainer, {
+      onSelect: vi.fn(),
+      onDirections: vi.fn(),
+    });
 
     // Every map in the app credits the tiles in the same words. Pinned by what
     // is on screen rather than by the constant alone, so a map that quietly

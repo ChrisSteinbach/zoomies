@@ -445,6 +445,37 @@ describe("acting on a result", () => {
     expect(state.selectedId).toBe("way/2");
   });
 
+  it("frames a selected spot with the user alongside", () => {
+    const { effects } = run([
+      ...showingResults,
+      { kind: "spot-selected", id: DRAKEN.id },
+    ]);
+
+    expect(effects).toEqual([
+      { kind: "frame-spot", spot: DRAKEN, user: TANTOLUNDEN },
+    ]);
+  });
+
+  it("frames nothing when the selection is cleared", () => {
+    const { effects } = run([
+      ...showingResults,
+      { kind: "spot-selected", id: DRAKEN.id },
+      { kind: "spot-selected", id: null },
+    ]);
+
+    expect(effects).toEqual([]);
+  });
+
+  it("frames nothing when the selected id is not on screen", () => {
+    const { state, effects } = run([
+      ...showingResults,
+      { kind: "spot-selected", id: "way/999" },
+    ]);
+
+    expect(effects).toEqual([]);
+    expect(state.selectedId).toBeNull();
+  });
+
   it("leaves the starting point to the maps app when the GPS knows it", () => {
     const { effects } = run([
       ...showingResults,
@@ -707,6 +738,24 @@ describe("selection across both layers", () => {
 
     expect(state.phase.kind).toBe("empty");
     expect(state.selectedId).toBe("way/9");
+  });
+
+  it("frames a bathing spot selected while the park search sits empty", () => {
+    const { effects } = run([
+      { kind: "position-fixed", position: TANTOLUNDEN },
+      { kind: "search-succeeded", spots: [], searchedRadiusM: 25_000 },
+      { kind: "bathing-toggled" },
+      {
+        kind: "bathing-search-succeeded",
+        spots: [HUNDBADET],
+        searchedRadiusM: 10_000,
+      },
+      { kind: "spot-selected", id: "way/9" },
+    ]);
+
+    expect(effects).toEqual([
+      { kind: "frame-spot", spot: HUNDBADET, user: TANTOLUNDEN },
+    ]);
   });
 
   it("gives directions to a bathing spot while the park search sits empty", () => {
