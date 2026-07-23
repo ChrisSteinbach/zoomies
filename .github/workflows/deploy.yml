@@ -31,8 +31,9 @@ jobs:
 
       - run: npm ci
 
-      # `base` is /zoomies/ for builds (vite.config.ts), which is what Pages
-      # serves this project page from.
+      # `base` is "/" (vite.config.ts) — the site is served from the apex
+      # custom domain root. public/CNAME rides along into dist/, so every
+      # deploy re-pins big-zoomies.com as the Pages custom domain.
       - name: Build app
         run: npm run build
 
