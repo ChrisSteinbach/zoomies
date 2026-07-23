@@ -14,6 +14,8 @@
 
 import { createSpotMap, planMarkers } from "./spot-map";
 import type { DogSpot, LatLon } from "./types";
+import { formatDistance } from "./format";
+import { haversineMeters } from "./geo";
 
 Object.defineProperty(HTMLElement.prototype, "clientWidth", {
   configurable: true,
@@ -173,7 +175,10 @@ describe("planMarkers", () => {
 describe("createSpotMap", () => {
   it("credits OpenStreetMap on the map itself", () => {
     const container = mount();
-    const map = createSpotMap(container, { onSelect: vi.fn() });
+    const map = createSpotMap(container, {
+      onSelect: vi.fn(),
+      onDirections: vi.fn(),
+    });
 
     const attribution = container.querySelector(
       ".leaflet-control-attribution",
@@ -188,7 +193,10 @@ describe("createSpotMap", () => {
 
   it("keeps the credit clear of the sheet that covers the map's foot", () => {
     const container = mount();
-    const map = createSpotMap(container, { onSelect: vi.fn() });
+    const map = createSpotMap(container, {
+      onSelect: vi.fn(),
+      onDirections: vi.fn(),
+    });
 
     // Leaflet's default corner is the bottom right, and that is precisely
     // where the result list sits on a phone. A covered credit is a covered
@@ -204,7 +212,10 @@ describe("createSpotMap", () => {
 
   it("shows a pin per result and one marker for the user", () => {
     const container = mount();
-    const map = createSpotMap(container, { onSelect: vi.fn() });
+    const map = createSpotMap(container, {
+      onSelect: vi.fn(),
+      onDirections: vi.fn(),
+    });
 
     map.render([BJORNS, MONTELIUS], SLUSSEN, null);
 
@@ -216,7 +227,10 @@ describe("createSpotMap", () => {
 
   it("draws the user's position as something that is not a result", () => {
     const container = mount();
-    const map = createSpotMap(container, { onSelect: vi.fn() });
+    const map = createSpotMap(container, {
+      onSelect: vi.fn(),
+      onDirections: vi.fn(),
+    });
 
     map.render([BJORNS], SLUSSEN, null);
 
@@ -232,7 +246,10 @@ describe("createSpotMap", () => {
 
   it("names each pin the way the list names it", () => {
     const container = mount();
-    const map = createSpotMap(container, { onSelect: vi.fn() });
+    const map = createSpotMap(container, {
+      onSelect: vi.fn(),
+      onDirections: vi.fn(),
+    });
 
     map.render([BJORNS, park({ id: "node/1" })], SLUSSEN, null);
 
@@ -246,7 +263,10 @@ describe("createSpotMap", () => {
 
   it("draws a bathing spot as something other than a park", () => {
     const container = mount();
-    const map = createSpotMap(container, { onSelect: vi.fn() });
+    const map = createSpotMap(container, {
+      onSelect: vi.fn(),
+      onDirections: vi.fn(),
+    });
 
     map.render([BJORNS, SMEDSUDDS], SLUSSEN, null);
 
@@ -264,7 +284,10 @@ describe("createSpotMap", () => {
 
   it("keeps a bathing pin its own colour once selected", () => {
     const container = mount();
-    const map = createSpotMap(container, { onSelect: vi.fn() });
+    const map = createSpotMap(container, {
+      onSelect: vi.fn(),
+      onDirections: vi.fn(),
+    });
 
     map.render([BJORNS, SMEDSUDDS], SLUSSEN, null);
     const parkSrc = pinNamed(container, "Björns Trädgårds hundrastgård").src;
@@ -282,7 +305,7 @@ describe("createSpotMap", () => {
   it("selects a bathing pin the same way it selects a park", () => {
     const container = mount();
     const onSelect = vi.fn<(id: string | null) => void>();
-    const map = createSpotMap(container, { onSelect });
+    const map = createSpotMap(container, { onSelect, onDirections: vi.fn() });
 
     map.render([BJORNS, SMEDSUDDS], SLUSSEN, null);
     tap(pinNamed(container, "Smedsuddsbadets hundbad"));
@@ -295,7 +318,7 @@ describe("createSpotMap", () => {
   it("reports the spot behind a pin when it is tapped", () => {
     const container = mount();
     const onSelect = vi.fn<(id: string | null) => void>();
-    const map = createSpotMap(container, { onSelect });
+    const map = createSpotMap(container, { onSelect, onDirections: vi.fn() });
 
     map.render([BJORNS, MONTELIUS], SLUSSEN, null);
     tap(pinNamed(container, "Monteliusvägens hundrastgård"));
@@ -308,21 +331,56 @@ describe("createSpotMap", () => {
   it("clears the selection when the selected pin is tapped again", () => {
     const container = mount();
     const onSelect = vi.fn<(id: string | null) => void>();
-    const map = createSpotMap(container, { onSelect });
+    const map = createSpotMap(container, { onSelect, onDirections: vi.fn() });
 
     map.render([BJORNS], SLUSSEN, BJORNS.id);
     tap(pinNamed(container, "Björns Trädgårds hundrastgård"));
 
     // The same toggle the list rows use, so a tap means the same thing in
-    // either view.
-    expect(onSelect).toHaveBeenCalledWith(null);
+    // either view. Exactly once: the open callout must not add a dismissal
+    // of its own to the same tap, or the two reports race each other and
+    // the toggle re-selects instead of clearing.
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith(null);
+
+    map.destroy();
+  });
+
+  it("clears the selection when the bare map is tapped", () => {
+    const container = mount();
+    const onSelect = vi.fn<(id: string | null) => void>();
+    const map = createSpotMap(container, { onSelect, onDirections: vi.fn() });
+
+    map.render([BJORNS], SLUSSEN, BJORNS.id);
+    tap(container.querySelector<HTMLElement>(".leaflet-container")!);
+
+    // Tapping past the pins is walking away from the answer: the selection
+    // clears, and the callout goes with it.
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith(null);
+
+    map.destroy();
+  });
+
+  it("lets a tap on the empty map fall through when nothing is selected", () => {
+    const container = mount();
+    const onSelect = vi.fn<(id: string | null) => void>();
+    const map = createSpotMap(container, { onSelect, onDirections: vi.fn() });
+
+    map.render([BJORNS], SLUSSEN, null);
+    tap(container.querySelector<HTMLElement>(".leaflet-container")!);
+
+    // With nothing selected there is nothing to walk away from — reporting
+    // null here would send the machine no-op events on every map tap.
+    expect(onSelect).not.toHaveBeenCalled();
 
     map.destroy();
   });
 
   it("highlights the pin a selection made elsewhere points at", () => {
     const container = mount();
-    const map = createSpotMap(container, { onSelect: vi.fn() });
+    const map = createSpotMap(container, {
+      onSelect: vi.fn(),
+      onDirections: vi.fn(),
+    });
 
     // What a tap on the list row arrives as: the same render, with an id.
     map.render([BJORNS, MONTELIUS], SLUSSEN, MONTELIUS.id);
@@ -336,7 +394,10 @@ describe("createSpotMap", () => {
 
   it("moves the highlight when the selection moves", () => {
     const container = mount();
-    const map = createSpotMap(container, { onSelect: vi.fn() });
+    const map = createSpotMap(container, {
+      onSelect: vi.fn(),
+      onDirections: vi.fn(),
+    });
 
     map.render([BJORNS, MONTELIUS], SLUSSEN, MONTELIUS.id);
     map.render([BJORNS, MONTELIUS], SLUSSEN, BJORNS.id);
@@ -350,7 +411,10 @@ describe("createSpotMap", () => {
 
   it("leaves no pin highlighted once the selection is cleared", () => {
     const container = mount();
-    const map = createSpotMap(container, { onSelect: vi.fn() });
+    const map = createSpotMap(container, {
+      onSelect: vi.fn(),
+      onDirections: vi.fn(),
+    });
 
     map.render([BJORNS, MONTELIUS], SLUSSEN, MONTELIUS.id);
     map.render([BJORNS, MONTELIUS], SLUSSEN, null);
@@ -363,7 +427,10 @@ describe("createSpotMap", () => {
 
   it("reuses the pins it already has when the results have not changed", () => {
     const container = mount();
-    const map = createSpotMap(container, { onSelect: vi.fn() });
+    const map = createSpotMap(container, {
+      onSelect: vi.fn(),
+      onDirections: vi.fn(),
+    });
 
     map.render([BJORNS, MONTELIUS], SLUSSEN, null);
     const before = pins(container);
@@ -380,7 +447,10 @@ describe("createSpotMap", () => {
 
   it("frames the map on the results after the first render", () => {
     const container = mount();
-    const map = createSpotMap(container, { onSelect: vi.fn() });
+    const map = createSpotMap(container, {
+      onSelect: vi.fn(),
+      onDirections: vi.fn(),
+    });
 
     map.render([BJORNS], SLUSSEN, null);
 
@@ -399,7 +469,10 @@ describe("createSpotMap", () => {
 
   it("centres on the user when there are no results to frame", () => {
     const container = mount();
-    const map = createSpotMap(container, { onSelect: vi.fn() });
+    const map = createSpotMap(container, {
+      onSelect: vi.fn(),
+      onDirections: vi.fn(),
+    });
 
     map.render([], SLUSSEN, null);
 
@@ -416,7 +489,10 @@ describe("createSpotMap", () => {
 
   it("follows the user without dragging the map along", () => {
     const container = mount();
-    const map = createSpotMap(container, { onSelect: vi.fn() });
+    const map = createSpotMap(container, {
+      onSelect: vi.fn(),
+      onDirections: vi.fn(),
+    });
 
     map.render([BJORNS], SLUSSEN, null);
     const pinBefore = placedAt(pinNamed(container, BJORNS.name!));
@@ -435,7 +511,10 @@ describe("createSpotMap", () => {
 
   it("goes where a deliberate reposition points it", () => {
     const container = mount();
-    const map = createSpotMap(container, { onSelect: vi.fn() });
+    const map = createSpotMap(container, {
+      onSelect: vi.fn(),
+      onDirections: vi.fn(),
+    });
 
     map.render([BJORNS], SLUSSEN, null);
     const before = placedAt(youAreHere(container)[0]);
@@ -458,7 +537,10 @@ describe("createSpotMap", () => {
 
   it("takes down the pins of results that are gone", () => {
     const container = mount();
-    const map = createSpotMap(container, { onSelect: vi.fn() });
+    const map = createSpotMap(container, {
+      onSelect: vi.fn(),
+      onDirections: vi.fn(),
+    });
 
     map.render([BJORNS, MONTELIUS], SLUSSEN, null);
     map.render([VANADIS], SLUSSEN, null);
@@ -472,7 +554,10 @@ describe("createSpotMap", () => {
 
   it("hands the container back the way it found it", () => {
     const container = mount();
-    const map = createSpotMap(container, { onSelect: vi.fn() });
+    const map = createSpotMap(container, {
+      onSelect: vi.fn(),
+      onDirections: vi.fn(),
+    });
     map.render([BJORNS], SLUSSEN, null);
 
     map.destroy();
@@ -483,7 +568,10 @@ describe("createSpotMap", () => {
 
   it("ignores a render that arrives after it was destroyed", () => {
     const container = mount();
-    const map = createSpotMap(container, { onSelect: vi.fn() });
+    const map = createSpotMap(container, {
+      onSelect: vi.fn(),
+      onDirections: vi.fn(),
+    });
 
     map.destroy();
 
@@ -492,7 +580,10 @@ describe("createSpotMap", () => {
 
   it("ignores a frame that arrives after it was destroyed", () => {
     const container = mount();
-    const map = createSpotMap(container, { onSelect: vi.fn() });
+    const map = createSpotMap(container, {
+      onSelect: vi.fn(),
+      onDirections: vi.fn(),
+    });
 
     map.destroy();
 
@@ -501,10 +592,265 @@ describe("createSpotMap", () => {
 
   it("survives being destroyed twice", () => {
     const container = mount();
-    const map = createSpotMap(container, { onSelect: vi.fn() });
+    const map = createSpotMap(container, {
+      onSelect: vi.fn(),
+      onDirections: vi.fn(),
+    });
 
     map.destroy();
 
     expect(() => map.destroy()).not.toThrow();
+  });
+});
+
+describe("the selection callout", () => {
+  /** The callout's own root element, if the selection currently has one open. */
+  function callout(container: HTMLElement): HTMLElement | null {
+    return container.querySelector<HTMLElement>(".spot-map-callout");
+  }
+
+  it("callout appears with the spot's name and distance when a render selects it", () => {
+    const container = mount();
+    const map = createSpotMap(container, {
+      onSelect: vi.fn(),
+      onDirections: vi.fn(),
+    });
+
+    map.render([BJORNS, MONTELIUS], SLUSSEN, BJORNS.id);
+
+    expect(
+      callout(container)?.querySelector(".spot-map-callout-name")?.textContent,
+    ).toBe(BJORNS.name);
+    expect(
+      callout(container)?.querySelector(".spot-map-callout-distance")
+        ?.textContent,
+    ).toBe(formatDistance(haversineMeters(SLUSSEN, BJORNS)));
+
+    map.destroy();
+  });
+
+  it("the callout's button reports a directions request for the spot", () => {
+    const container = mount();
+    const onDirections = vi.fn<(id: string) => void>();
+    const map = createSpotMap(container, { onSelect: vi.fn(), onDirections });
+
+    map.render([BJORNS, MONTELIUS], SLUSSEN, MONTELIUS.id);
+    const button = callout(container)!.querySelector<HTMLButtonElement>(
+      ".spot-map-callout-directions",
+    )!;
+    expect(button.getAttribute("aria-label")).toBe(
+      `Open in maps: ${MONTELIUS.name}`,
+    );
+    tap(button);
+
+    expect(onDirections).toHaveBeenCalledWith(MONTELIUS.id);
+
+    map.destroy();
+  });
+
+  it("the callout goes away when the selection clears", () => {
+    const container = mount();
+    const map = createSpotMap(container, {
+      onSelect: vi.fn(),
+      onDirections: vi.fn(),
+    });
+
+    map.render([BJORNS], SLUSSEN, BJORNS.id);
+    map.render([BJORNS], SLUSSEN, null);
+
+    expect(callout(container)).toBeNull();
+
+    map.destroy();
+  });
+
+  it("dismissing the callout with its close button clears the selection", () => {
+    const container = mount();
+    const onSelect = vi.fn<(id: string | null) => void>();
+    const map = createSpotMap(container, { onSelect, onDirections: vi.fn() });
+
+    map.render([BJORNS], SLUSSEN, BJORNS.id);
+    tap(container.querySelector(".leaflet-popup-close-button")!);
+
+    // The dismissal is reported exactly once — the callout's own close and
+    // the machine's selection must not fall out of step with each other.
+    expect(onSelect).toHaveBeenCalledWith(null);
+    expect(onSelect).toHaveBeenCalledTimes(1);
+
+    map.destroy();
+  });
+
+  it("a re-render that changes nothing leaves the callout DOM alone", () => {
+    const container = mount();
+    const map = createSpotMap(container, {
+      onSelect: vi.fn(),
+      onDirections: vi.fn(),
+    });
+
+    map.render([BJORNS], SLUSSEN, BJORNS.id);
+    const before = callout(container);
+
+    // Same spots, same position, same selection — the GPS-tick case.
+    map.render([BJORNS], SLUSSEN, BJORNS.id);
+
+    expect(callout(container)).toBe(before);
+
+    map.destroy();
+  });
+
+  it("a bathing spot's callout carries the badge, the provenance line and the seasonal caveat", () => {
+    const container = mount();
+    const map = createSpotMap(container, {
+      onSelect: vi.fn(),
+      onDirections: vi.fn(),
+      // Inside the Stockholm beach ban's 1 Jun – 31 Aug window.
+      today: new Date(2026, 6, 15),
+    });
+    const banned: DogSpot = {
+      id: "way/7001",
+      kind: "bathing_spot",
+      name: "Långholmens strandbad",
+      lat: 59.3208,
+      lon: 18.0284,
+      tags: {},
+      provenance: "permitted",
+      seasonal: {
+        kind: "ban",
+        from: { month: 6, day: 1 },
+        to: { month: 8, day: 31 },
+      },
+    };
+
+    map.render([banned], SLUSSEN, banned.id);
+
+    expect(
+      callout(container)?.querySelector(".spot-map-callout-kind")?.textContent,
+    ).toBe("Bathing");
+    expect(
+      callout(container)?.querySelector(".spot-map-callout-provenance")
+        ?.textContent,
+    ).toBe("Dogs allowed");
+    expect(
+      callout(container)?.querySelector(".spot-map-callout-caveat")
+        ?.textContent,
+    ).toBe("Dogs banned now (1 Jun – 31 Aug)");
+    // The card is marked, not just the caption — the one thing here that can
+    // cost the reader a fine must not be something a hurried glance misses.
+    expect(callout(container)?.getAttribute("data-banned")).toBe("true");
+
+    map.destroy();
+  });
+
+  it("a bathing spot with no seasonal rule still says to verify signage on site", () => {
+    const container = mount();
+    const map = createSpotMap(container, {
+      onSelect: vi.fn(),
+      onDirections: vi.fn(),
+      today: new Date(2026, 0, 15),
+    });
+    const spot: DogSpot = {
+      id: "way/7002",
+      kind: "bathing_spot",
+      name: "Tantobadet",
+      lat: 59.3208,
+      lon: 18.0284,
+      tags: {},
+      provenance: "designated",
+    };
+
+    map.render([spot], SLUSSEN, spot.id);
+
+    expect(
+      callout(container)?.querySelector(".spot-map-callout-caveat")
+        ?.textContent,
+    ).toBe("Verify signage on site");
+
+    map.destroy();
+  });
+});
+
+describe("frameSpot", () => {
+  it("leaves the viewport alone when the spot is already in view", () => {
+    const container = mount();
+    const map = createSpotMap(container, {
+      onSelect: vi.fn(),
+      onDirections: vi.fn(),
+    });
+
+    // The opening fit already puts BJORNS comfortably inside the padded
+    // viewport (see "frames the map on the results after the first render").
+    map.render([BJORNS], SLUSSEN, null);
+    const pinBefore = placedAt(pinNamed(container, BJORNS.name!));
+    const youBefore = placedAt(youAreHere(container)[0]);
+
+    map.frameSpot({ lat: BJORNS.lat, lon: BJORNS.lon }, SLUSSEN);
+
+    expect(placedAt(pinNamed(container, BJORNS.name!))).toBe(pinBefore);
+    expect(placedAt(youAreHere(container)[0])).toBe(youBefore);
+
+    map.destroy();
+  });
+
+  it("brings an off-screen spot and the user into view", () => {
+    const container = mount();
+    const map = createSpotMap(container, {
+      onSelect: vi.fn(),
+      onDirections: vi.fn(),
+    });
+    // ~0.09° of longitude is ~5 km at Stockholm's latitude — far outside the
+    // 390px stubbed viewport once the map sits at NEARBY_ZOOM on SLUSSEN.
+    const FAR = park({
+      id: "way/8001",
+      name: "Fjärran hundrastgård",
+      lat: SLUSSEN.lat,
+      lon: SLUSSEN.lon + 0.09,
+    });
+
+    map.render([FAR], SLUSSEN, null);
+    // A deliberate reposition back onto the user alone, discarding whatever
+    // the opening fit did — this is what puts FAR's existing pin off-screen.
+    map.frame(SLUSSEN);
+
+    map.frameSpot({ lat: FAR.lat, lon: FAR.lon }, SLUSSEN);
+
+    const pin = pinNamed(container, FAR.name!);
+    const you = youAreHere(container)[0];
+    for (const marker of [pin, you]) {
+      expect(parseFloat(marker.style.left)).toBeGreaterThanOrEqual(0);
+      expect(parseFloat(marker.style.left)).toBeLessThanOrEqual(390);
+      expect(parseFloat(marker.style.top)).toBeGreaterThanOrEqual(0);
+      expect(parseFloat(marker.style.top)).toBeLessThanOrEqual(640);
+    }
+
+    map.destroy();
+  });
+
+  it("treats the obscured right edge as out of view", () => {
+    const container = mount();
+    const map = createSpotMap(container, {
+      onSelect: vi.fn(),
+      onDirections: vi.fn(),
+    });
+    // A few hundred metres east of SLUSSEN: close enough that, framed on the
+    // user alone at NEARBY_ZOOM, it lands inside the 390px viewport — but
+    // within the rightmost 200px a caller can say a drawer covers.
+    const NEARBY = park({
+      id: "way/8002",
+      name: "Närliggande hundrastgård",
+      lat: SLUSSEN.lat,
+      lon: SLUSSEN.lon + 0.005,
+    });
+
+    map.frame(SLUSSEN);
+    map.render([NEARBY], SLUSSEN, null);
+
+    const before = parseFloat(pinNamed(container, NEARBY.name!).style.left);
+    expect(before).toBeGreaterThan(190); // inside the rightmost 200px of 390
+
+    map.frameSpot({ lat: NEARBY.lat, lon: NEARBY.lon }, SLUSSEN, 200);
+
+    const after = parseFloat(pinNamed(container, NEARBY.name!).style.left);
+    expect(after).toBeLessThan(190);
+
+    map.destroy();
   });
 });

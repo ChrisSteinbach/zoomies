@@ -190,7 +190,36 @@ export function composeApp(root: HTMLElement, deps: AppDeps = {}): AppHandle {
 
   const map: SpotMapHandle = createSpotMap(mapElement, {
     onSelect: (id) => dispatch({ kind: "spot-selected", id }),
+    // The callout's button and the row's button make the same request; which
+    // maps app to open and whether to hand it an origin stays the machine's
+    // one decision.
+    onDirections: (id) => dispatch({ kind: "directions-requested", id }),
   });
+
+  /**
+   * How much of the map's right edge the open drawer is sitting over.
+   *
+   * The map view takes this as a number rather than knowing the drawer
+   * exists: a frame has to aim for the visible part of the viewport, and the
+   * composition root is the one place that can see both elements. A drawer
+   * covering the whole map reports zero — there is no visible sliver to aim
+   * for, and at those widths selecting from the list closes the drawer
+   * instead (see the list wiring below).
+   */
+  function obscuredMapWidth(): number {
+    if (!drawer.isOpen()) return 0;
+    const covered = drawer.panel.offsetWidth;
+    return covered >= mapElement.offsetWidth ? 0 : covered;
+  }
+
+  /**
+   * Whether the open drawer would hide the map entirely, read from the laid
+   * out widths rather than from a breakpoint constant that could drift from
+   * the stylesheet's.
+   */
+  function drawerCoversMap(): boolean {
+    return drawer.panel.offsetWidth >= mapElement.offsetWidth;
+  }
 
   // ── The dispatch loop ────────────────────────────────────────────────
   //
@@ -257,6 +286,10 @@ export function composeApp(root: HTMLElement, deps: AppDeps = {}): AppHandle {
 
       case "frame-map":
         map.frame(effect.position);
+        return;
+
+      case "frame-spot":
+        map.frameSpot(effect.spot, effect.user, obscuredMapWidth());
         return;
 
       case "open-directions":
@@ -373,7 +406,20 @@ export function composeApp(root: HTMLElement, deps: AppDeps = {}): AppHandle {
 
     map.render(spots, position, selectedId);
     renderSpotList(listElement, spots, position, selectedId, {
-      onSelect: (id) => dispatch({ kind: "spot-selected", id }),
+      onSelect: (id) => {
+        // Drawer position is chrome, not state, like the About dialog — but
+        // at widths where the open sheet is the whole screen, choosing a
+        // spot from it is a request to see the map, so the sheet steps aside
+        // *before* the machine frames the answer behind it. Focus moves to
+        // the handle — the way back — rather than staying stranded on a row
+        // inside the parked-off-screen panel. Clearing a selection moves
+        // nothing.
+        if (id !== null && drawer.isOpen() && drawerCoversMap()) {
+          drawer.close();
+          drawer.focusHandle();
+        }
+        dispatch({ kind: "spot-selected", id });
+      },
       onDirections: (id) => dispatch({ kind: "directions-requested", id }),
     });
 

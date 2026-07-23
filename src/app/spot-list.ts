@@ -40,8 +40,9 @@ const UNNAMED: Record<DogSpotKind, string> = {
 };
 
 /** The badge beside a bathing spot's name — the at-a-glance layer marker,
- *  coloured to match its pin on the map. */
-const BATHING_BADGE = "Bathing";
+ *  coloured to match its pin on the map. Exported for the map's callout, so
+ *  both surfaces name the layer with the same word. */
+export const BATHING_BADGE = "Bathing";
 
 /**
  * What the data actually claims about dogs at a bathing spot, in one line.
@@ -56,8 +57,12 @@ const BATHING_BADGE = "Bathing";
  * Dog parks get no such line. `leisure=dog_park` *is* the designation, so a
  * caption saying so under every park would be noise the eye soon learns to
  * skip past — which is precisely the habit the bathing lines cannot afford.
+ *
+ * Exported because the map's callout (spot-map.ts) makes the same claims and
+ * must make them in the same words — two labels for one provenance would be
+ * two chances to overstate it.
  */
-const PROVENANCE_LABELS: Record<Provenance, string> = {
+export const PROVENANCE_LABELS: Record<Provenance, string> = {
   designated: "Dog bathing area",
   permitted: "Dogs allowed",
   "name-match": "Unverified — matched by name",
@@ -156,7 +161,7 @@ export function describeTags(tags: SpotTags): string[] {
 }
 
 /** What a bathing row says about the season, and how loudly. */
-interface SeasonalCaption {
+export interface SeasonalCaption {
   text: string;
   /**
    * Whether the ban is in force *today*. The row itself is marked when it is,
@@ -183,8 +188,12 @@ interface SeasonalCaption {
  * this in May is planning a trip in July. An unparsed rule says only that
  * there is something to check. None of the four asserts that dogs are welcome:
  * this app has no state that means "verified fine, go ahead".
+ *
+ * Exported for the map's callout, which must not say less about legality
+ * than the row does (a card with a directions button is an invitation to
+ * go) — one function, so the two surfaces cannot drift.
  */
-function seasonalCaption(spot: DogSpot, today: Date): SeasonalCaption {
+export function seasonalCaption(spot: DogSpot, today: Date): SeasonalCaption {
   const { seasonal } = spot;
   if (seasonal === undefined) return { text: VERIFY_SIGNAGE, bannedNow: false };
   if (seasonal.kind === "unparsed") {
@@ -415,7 +424,14 @@ function restoreFocus(list: HTMLElement, focused: FocusedControl | null): void {
       control.dataset.spotId === focused.spotId &&
       control.dataset.spotAction === focused.action
     ) {
-      control.focus();
+      // Restore the place, not the scroll. Without preventScroll the browser
+      // also scrolls the refocused control into view, and this runs on every
+      // automatic rebuild — with the drawer closed over a live selection,
+      // that "reveal" scrolled the app shell itself sideways to show a
+      // control inside the parked-off-screen panel, dragging the map out of
+      // the viewport with it. A rebuild gives the user their place back; it
+      // does not get to move anything.
+      control.focus({ preventScroll: true });
       return;
     }
   }

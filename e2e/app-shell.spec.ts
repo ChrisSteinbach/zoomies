@@ -435,6 +435,124 @@ test.describe("with the bathing layer", () => {
   });
 });
 
+/**
+ * A selection, answered on the map.
+ *
+ * Also not a stacking test: what it guards is the pact between the two
+ * surfaces — a row tapped in the sheet must produce a visible answer on the
+ * map, and a tap that dismisses the answer must clear the selection behind
+ * it. jsdom can assert that the callout exists and that the frame effect
+ * fired; only a real browser lays the drawer over the map, delivers
+ * Leaflet's real event order (a marker tap arrives after the map's
+ * `preclick`, which is where a close-on-click once inverted the toggle),
+ * and can be asked whether the pin, the user and the card actually ended
+ * up on screen together.
+ */
+test.describe("with a result selected", () => {
+  test.use({ permissions: ["geolocation"], geolocation: STOCKHOLM });
+
+  /** Everything the frame promises to land in view, by class. */
+  const FRAMED_TOGETHER = [
+    ".spot-map-pin-selected",
+    ".spot-map-you",
+    ".leaflet-popup",
+  ];
+
+  test("selecting from the list reveals the answer on the map", async ({
+    context,
+    page,
+  }) => {
+    await stubNetwork(context);
+    await page.goto("/");
+
+    const firstRow = page.locator(".spot-list-select").first();
+    await expect(firstRow).toBeVisible();
+
+    // Whether this drawer is the whole screen is a fact of the layout, not
+    // of the project name — the wiring itself decides the same way.
+    const drawerBox = await page.locator(".spot-drawer").boundingBox();
+    const viewport = page.viewportSize();
+    if (drawerBox === null || viewport === null) {
+      throw new Error("the open drawer and the viewport should both exist");
+    }
+    const coversMap = drawerBox.width >= viewport.width;
+
+    await firstRow.click();
+
+    // The callout is the map's side of the selection: the same name the row
+    // carries, where the pin is.
+    const callout = page.locator(".spot-map-callout");
+    await expect(callout).toBeVisible();
+    await expect(callout).toContainText(NEAREST_PARK);
+
+    // A sheet that is the whole screen steps aside so the answer is visible
+    // at all; one that leaves the map beside it stays put.
+    await expect(
+      page.getByRole("button", { name: DRAWER_HANDLE }),
+    ).toHaveAttribute("aria-expanded", coversMap ? "false" : "true");
+
+    // The frame settles with the selected pin, the user and the whole card
+    // on screen together — and clear of the still-open desktop drawer, whose
+    // covered sliver the frame was told about.
+    const limit = coversMap ? viewport.width : drawerBox.x;
+    await expect(async () => {
+      for (const selector of FRAMED_TOGETHER) {
+        const box = await page.locator(selector).boundingBox();
+        expect(box, selector).not.toBeNull();
+        expect(box!.x, selector).toBeGreaterThanOrEqual(0);
+        expect(box!.y, selector).toBeGreaterThanOrEqual(0);
+        expect(box!.x + box!.width, selector).toBeLessThanOrEqual(limit + 1);
+        expect(box!.y + box!.height, selector).toBeLessThanOrEqual(
+          viewport.height,
+        );
+      }
+    }).toPass({ timeout: 5_000 });
+  });
+
+  test("dismissing the callout clears the selection", async ({
+    context,
+    page,
+  }) => {
+    await stubNetwork(context);
+    await page.goto("/");
+
+    const firstRow = page.locator(".spot-list-select").first();
+    await expect(firstRow).toBeVisible();
+    await firstRow.click();
+    await expect(firstRow).toHaveAttribute("aria-pressed", "true");
+
+    // The popup's × is one of the callout's own ways out; it must clear the
+    // one selection rather than leaving the row lit behind a closed card.
+    await page.locator(".leaflet-popup-close-button").click();
+
+    await expect(page.locator(".spot-map-callout")).toHaveCount(0);
+    await expect(firstRow).toHaveAttribute("aria-pressed", "false");
+  });
+
+  test("tapping the selected pin again clears the selection", async ({
+    context,
+    page,
+  }) => {
+    await stubNetwork(context);
+    await page.goto("/");
+
+    const firstRow = page.locator(".spot-list-select").first();
+    await expect(firstRow).toBeVisible();
+    await firstRow.click();
+
+    // The frame has put the selected pin on screen; the second tap is the
+    // map-side deselect, and it has to survive the real event order — the
+    // callout's own dismissal machinery must not race it (see the describe).
+    const selected = page.locator(".spot-map-pin-selected");
+    await expect(selected).toBeVisible();
+    await selected.click();
+
+    await expect(page.locator(".spot-map-pin-selected")).toHaveCount(0);
+    await expect(page.locator(".spot-map-callout")).toHaveCount(0);
+    await expect(firstRow).toHaveAttribute("aria-pressed", "false");
+  });
+});
+
 // No permission is granted here, which the browser answers with an outright
 // denial — the same dead end as tapping "Block", and the state the picker
 // exists to rescue.
