@@ -2,23 +2,21 @@ import { defineConfig } from "vite";
 import basicSsl from "@vitejs/plugin-basic-ssl";
 import { VitePWA } from "vite-plugin-pwa";
 
-/**
- * GitHub Pages serves this repo as a *project* page — `ChrisSteinbach/zoomies`
- * lands on https://chrissteinbach.github.io/zoomies/ — so every built URL
- * (assets, manifest, service worker scope) has to carry the `/zoomies/`
- * prefix or the deployed site 404s on all of them.
- *
- * The dev server has no such prefix, so it keeps serving from the root and
- * `npm run dev` is unaffected. Preview does take the prefix: it serves the
- * built files, whose URLs already carry it, and without it every asset there
- * would 404 into the SPA fallback instead.
- */
-const PAGES_BASE = "/zoomies/";
-
 const THEME_COLOR = "#2e7d32";
 
-export default defineConfig(({ command, isPreview }) => {
-  const base = command === "build" || isPreview ? PAGES_BASE : "/";
+export default defineConfig(() => {
+  /**
+   * The app is served from the apex custom domain https://big-zoomies.com/,
+   * so every built URL — assets, manifest, service-worker scope — resolves
+   * against the site root. `base` is "/" for dev, preview and the production
+   * build alike, so preview mirrors production exactly.
+   *
+   * It was once "/zoomies/", when GitHub Pages served this repo as a *project*
+   * page at chrissteinbach.github.io/zoomies/ and every URL had to carry that
+   * prefix. The custom domain serves from the root; public/CNAME is what pins
+   * the domain onto each Pages deploy.
+   */
+  const base = "/";
 
   return {
     base,

@@ -17,8 +17,8 @@ Data comes from [OpenStreetMap](https://www.openstreetmap.org/) —
 
 ## Status
 
-**Live at <https://chrissteinbach.github.io/zoomies/>** — installable, and
-best opened on a phone, where the GPS is.
+**Live at <https://big-zoomies.com/>** — installable, and best opened on a
+phone, where the GPS is.
 
 **Phase 1 (MVP) is complete and validated against Stockholm.** From a
 position on Södermalm the app returns the nearest dog parks sorted by
