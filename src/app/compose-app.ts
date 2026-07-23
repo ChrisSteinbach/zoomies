@@ -301,6 +301,10 @@ export function composeApp(root: HTMLElement, deps: AppDeps = {}): AppHandle {
         map.frameSpot(effect.spot, effect.user);
         return;
 
+      case "frame-results":
+        map.frameResults(effect.spots, effect.position);
+        return;
+
       case "open-directions":
         openUrl(directionsUrl(effect.spot, effect.origin));
         return;

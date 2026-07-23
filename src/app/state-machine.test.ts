@@ -295,6 +295,41 @@ describe("answering the search", () => {
 
     expect(state.phase.kind).toBe("empty");
   });
+
+  it("asks the map to fit a picked origin's answer once it lands", () => {
+    const { effects } = run([
+      { kind: "position-picked", position: A_WALK_AWAY },
+      {
+        kind: "search-succeeded",
+        spots: [TANTO, DRAKEN],
+        searchedRadiusM: 3000,
+      },
+    ]);
+
+    // Framing the pick only centred on it (the frame-map above); its nearest
+    // park can sit outside that view, so the answer is fitted in when it
+    // arrives — origin and results together, the sibling of the GPS-startup
+    // frame. The map ignores this if the user has claimed the viewport since,
+    // which the machine cannot see and does not try to.
+    expect(effects).toEqual([
+      { kind: "frame-results", spots: [TANTO, DRAKEN], position: A_WALK_AWAY },
+    ]);
+  });
+
+  it("still offers the fit when a picked origin finds nothing, leaving none owed", () => {
+    const { effects } = run([
+      { kind: "position-picked", position: A_WALK_AWAY },
+      { kind: "search-succeeded", spots: [], searchedRadiusM: 25_000 },
+    ]);
+
+    // The effect rides an empty answer too, carrying no spots. The map has
+    // nothing to widen for and stays on the frame's centred view, but the
+    // offer still resolves the "fit owed" latch rather than leave it armed to
+    // catch some later, unrelated search.
+    expect(effects).toEqual([
+      { kind: "frame-results", spots: [], position: A_WALK_AWAY },
+    ]);
+  });
 });
 
 describe("when the search fails", () => {

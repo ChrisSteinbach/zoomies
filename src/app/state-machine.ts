@@ -162,6 +162,27 @@ export type Effect =
    * on a visible pin from yanking the map away from where the user put it.
    */
   | { kind: "frame-spot"; spot: DogSpot; user: LatLon | null }
+  /**
+   * Fit a deliberate search's own answer into view once it lands.
+   *
+   * The delayed half of `frame-map`. Framing a picked or resumed origin
+   * centres on it at once — the interim "here is where you pointed" — but the
+   * search that framing kicks off answers a moment later, and its nearest
+   * park can sit outside that centred view (the same Södermalm geometry as
+   * the GPS-startup frame, zoomies-b3o). This fits origin and answer together
+   * when the answer arrives, exactly as the opening frame's second step does
+   * (spot-map.ts frameOnce).
+   *
+   * It is a distinct effect rather than a re-run of that opening frame
+   * because a picked search's in-flight renders still carry the *old*
+   * neighbourhood's pins: only the machine can say which render is the new
+   * answer, and only the effect fires at that moment. Emitted on every
+   * `search-succeeded`, but honoured by the map only while a deliberate frame
+   * is owed one and the user has not taken the viewport since — a pan between
+   * pick and answer keeps its ground (spot-map.ts frameResults). An ordinary
+   * search that no frame preceded finds nothing owed and moves nothing.
+   */
+  | { kind: "frame-results"; spots: DogSpot[]; position: LatLon }
   | { kind: "open-directions"; spot: DogSpot; origin: LatLon | null };
 
 export interface TransitionResult {
@@ -528,13 +549,19 @@ function searchSucceeded(
   if (state.phase.kind !== "searching") return stay(state);
   const { position } = state.phase;
 
+  // Fit the answer if a deliberate frame is owed one — the map ignores this
+  // otherwise (see the effect's own doc). Carried on both the empty and the
+  // found branches so the map's "owed a fit" latch is always resolved rather
+  // than left armed to catch some later, unrelated search.
+  const frameResults: Effect = { kind: "frame-results", spots, position };
+
   // An empty answer replaces the old results rather than falling back to
   // them. The user has moved somewhere with nothing nearby, and showing the
   // last town's dog parks as if they were here would be a confident lie.
   if (spots.length === 0) {
     return {
       next: { ...state, phase: { kind: "empty", position, searchedRadiusM } },
-      effects: [],
+      effects: [frameResults],
     };
   }
 
@@ -543,7 +570,7 @@ function searchSucceeded(
       ...state,
       phase: { kind: "ready", position, spots, searchedRadiusM },
     },
-    effects: [],
+    effects: [frameResults],
   };
 }
 
