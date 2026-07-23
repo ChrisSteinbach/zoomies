@@ -2,6 +2,7 @@ import { createOverpassProvider, OVERPASS_MIRROR_ENDPOINT } from "./overpass";
 import { withFairUse } from "./fair-use";
 import { withFallback } from "./fallback";
 import { createDatasetLoader, withOfflineDataset } from "./offline-dataset";
+import { withDoubleMappingCollapse } from "./double-mapping";
 import { withCache } from "./place-cache";
 import {
   BATHING_TARGET_RESULT_COUNT,
@@ -69,13 +70,18 @@ export interface Searches {
 /**
  * The provider stack, outermost first.
  *
- * Expanding radius asks *how far*, the offline dataset asks *from where*,
- * the cache asks *whether at all*, fair use asks *how often*, fallback asks
- * *whom*, and Overpass answers one question at a time. The order is
- * load-bearing: the dataset sits outside the whole live apparatus because an
- * offline answer must cost nothing live — no cache entry written, no
- * fair-use slot taken, no endpoint reached — while a query it cannot
- * honestly cover falls through to that apparatus unchanged. The cache must
+ * Expanding radius asks *how far*, the double-mapping collapse asks *one
+ * place or two*, the offline dataset asks *from where*, the cache asks
+ * *whether at all*, fair use asks *how often*, fallback asks *whom*, and
+ * Overpass answers one question at a time. The order is load-bearing: the
+ * collapse wraps everything below it so dataset-served, cached and live
+ * answers all pass through the one rule — and sitting outside the cache
+ * means raw results are what get stored, so the rule can change without
+ * stale collapses baked into anyone's storage. The dataset sits outside the
+ * whole live apparatus because an offline answer must cost nothing live —
+ * no cache entry written, no fair-use slot taken, no endpoint reached —
+ * while a query it cannot honestly cover falls through to that apparatus
+ * unchanged. The cache must
  * sit inside the expansion so each radius is cached separately, and outside
  * fair use so a cache hit never takes a slot — which also means a cache hit
  * never reaches an endpoint at all, mirror included. Fallback sits inside
@@ -98,9 +104,11 @@ export function createSearches(): Searches {
       ),
     ),
   );
-  const stack = withOfflineDataset(
-    createDatasetLoader({ url: configuredDatasetUrl() }),
-    live,
+  const stack = withDoubleMappingCollapse(
+    withOfflineDataset(
+      createDatasetLoader({ url: configuredDatasetUrl() }),
+      live,
+    ),
   );
 
   return {

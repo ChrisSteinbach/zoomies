@@ -211,6 +211,32 @@ function seasonalRule(tags: Record<string, unknown>): SeasonalRule | undefined {
 }
 
 /**
+ * Fold a dropped element's tags into the one that survives a collapse.
+ *
+ * When two OSM elements are collapsed into one row (see
+ * `double-mapping.ts`), the kept element's tags win wherever it speaks, and
+ * the dropped element's tag is adopted only where the kept one is silent.
+ * Two alternatives were considered: (a) keep only the kept element's tags —
+ * never invents a claim, but may drop a surveyed one; (b) adopt the dropped
+ * element's tag only where the kept spot is silent — turns two half-surveys
+ * into one row without contradicting either surveyor. We chose (b): it is
+ * more honest to the surveyors' work, and absence still means "nobody said"
+ * (the `describeTags` contract in spot-list.ts), because `??` fills only
+ * silence — a surveyed `false` on the kept side is preserved (`false ??
+ * true` is `false`).
+ *
+ * Returns a new object; never mutates either input.
+ */
+export function adoptSilentTags(kept: SpotTags, dropped: SpotTags): SpotTags {
+  return {
+    leashRequired: kept.leashRequired ?? dropped.leashRequired,
+    fenced: kept.fenced ?? dropped.fenced,
+    lit: kept.lit ?? dropped.lit,
+    surface: kept.surface ?? dropped.surface,
+  };
+}
+
+/**
  * The OSM tags worth showing, translated.
  *
  * A field is set only when OSM actually says something. Absent means unknown,

@@ -1,4 +1,5 @@
 import {
+  adoptSilentTags,
   asBathingSpot,
   asDogPark,
   isBathingCandidate,
@@ -174,6 +175,62 @@ describe("translating OSM tags into display tags", () => {
 
   it("says nothing at all about an untagged feature", () => {
     expect(toSpotTags({ leisure: "dog_park" })).toEqual({});
+  });
+});
+
+/**
+ * `adoptSilentTags` is the tag-merging half of the double-mapping collapse
+ * (`double-mapping.ts`): when a node and an area turn out to be the same
+ * real place, the survivor's tags win wherever it speaks, and the dropped
+ * element only fills in silence.
+ */
+describe("adoptSilentTags", () => {
+  it("fills only the fields the kept side is silent on", () => {
+    const kept = { fenced: true };
+    const dropped = { fenced: false, lit: true, surface: "sand" };
+
+    expect(adoptSilentTags(kept, dropped)).toEqual({
+      fenced: true,
+      lit: true,
+      surface: "sand",
+    });
+  });
+
+  it("preserves a surveyed false on the kept side rather than adopting a dropped true", () => {
+    // false ?? true is false: a surveyed "no" is still a claim, and the
+    // dropped element's claim must not overwrite it.
+    const kept = { fenced: false };
+    const dropped = { fenced: true };
+
+    expect(adoptSilentTags(kept, dropped).fenced).toBe(false);
+  });
+
+  it("adopts nothing when the kept side is already fully surveyed", () => {
+    const kept = {
+      leashRequired: true,
+      fenced: true,
+      lit: false,
+      surface: "grass",
+    };
+    const dropped = {
+      leashRequired: false,
+      fenced: false,
+      lit: true,
+      surface: "sand",
+    };
+
+    expect(adoptSilentTags(kept, dropped)).toEqual(kept);
+  });
+
+  it("does not mutate either input", () => {
+    const kept = { fenced: true };
+    const droppedOriginal = { lit: true };
+    const dropped = { lit: true };
+
+    adoptSilentTags(kept, dropped);
+
+    expect(kept).toEqual({ fenced: true });
+    expect(dropped).toEqual(droppedOriginal);
   });
 });
 
