@@ -412,6 +412,46 @@ test.describe("with the device's position shared", () => {
     await expect(page.locator(".spot-list-item").first()).toBeVisible();
   });
 
+  test("repositioning returns the list to the nearest result", async ({
+    context,
+    page,
+  }) => {
+    // Only a browser can judge this: jsdom lays nothing out, so its list never
+    // scrolls and the reset has nothing to undo. Here the sheet is a real
+    // scroll container (`.spot-drawer-content`), and the question is whether
+    // picking a new origin brings the reader back to the top of the freshly
+    // sorted answer or strands them at the offset of the place they left
+    // (zoomies-dxu). Sorted-by-distance is the one hard display rule (spec
+    // §2.2), and after a reposition the top is where the answer begins.
+    await stubNetwork(context, { copies: 10 });
+    await page.goto("/");
+
+    const content = page.locator(".spot-drawer-content");
+    await expect(page.locator(".spot-list-item").first()).toBeVisible();
+
+    // Scroll to the end — and prove there was an end to scroll to, or the
+    // reset below would pass for the wrong reason.
+    const scrolled = await content.evaluate((el) => {
+      el.scrollTop = el.scrollHeight;
+      return el.scrollTop;
+    });
+    expect(scrolled).toBeGreaterThan(0);
+
+    // Repositioning by hand is a new question, not a GPS tick: open the picker
+    // from the mode toggle, drop a pin, and confirm it.
+    await page
+      .getByRole("button", { name: "Choose a spot on the map" })
+      .click();
+    await expect(page.locator(".app-picker")).toBeVisible();
+    await page.locator(".map-picker-map").click();
+    await page.getByRole("button", { name: "Use this location" }).click();
+
+    // The picked spot's answer is on screen, read from its nearest result
+    // down — the list restarts from the top exactly as the map re-frames.
+    await expect(page.locator(".spot-list-item").first()).toBeVisible();
+    await expect(content).toHaveJSProperty("scrollTop", 0);
+  });
+
   test("the credit bar stays on top of the results", async ({
     context,
     page,

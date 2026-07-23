@@ -295,6 +295,14 @@ export function composeApp(root: HTMLElement, deps: AppDeps = {}): AppHandle {
 
       case "frame-map":
         map.frame(effect.position);
+        // A deliberate reposition is a new question, so the results restart
+        // from the nearest one rather than holding the scroll offset of the
+        // place just left — where, after a jump to a new city, the nearest
+        // parks would sit above the fold (zoomies-dxu, spec §2.2). The list's
+        // scroll ancestor is the drawer content (spot-drawer.css), not the
+        // list box, so it is what resets. GPS ticks never emit frame-map, so
+        // ordinary walking still keeps the reader's place (spot-list.ts).
+        drawer.element.scrollTop = 0;
         return;
 
       case "frame-spot":

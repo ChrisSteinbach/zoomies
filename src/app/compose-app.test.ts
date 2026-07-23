@@ -380,6 +380,60 @@ describe("while the user walks", () => {
   });
 });
 
+describe("keeping the reader's place in the list", () => {
+  it("picking a new position sends the list back to the top", async () => {
+    const { root, gps, search, picker } = mount();
+
+    gps.fix(TANTOLUNDEN);
+    await search.answer([TANTO, DRAKEN]);
+    const scroller = root.querySelector<HTMLElement>(".spot-drawer-content")!;
+    // The reader has scrolled partway down before repositioning.
+    scroller.scrollTop = 300;
+
+    root.querySelector<HTMLButtonElement>(".mode-toggle-pick")!.click();
+    picker.pick(FAR_ENOUGH);
+    await search.answer([DRAKEN]);
+
+    expect(scroller.scrollTop).toBe(0);
+  });
+
+  it("resuming GPS after a pick, and landing far away, also sends the list to the top", async () => {
+    const { root, gps, search, picker } = mount();
+
+    gps.fix(TANTOLUNDEN);
+    await search.answer([TANTO]);
+    root.querySelector<HTMLButtonElement>(".mode-toggle-pick")!.click();
+    picker.pick(FAR_ENOUGH);
+    await search.answer([DRAKEN]);
+    const scroller = root.querySelector<HTMLElement>(".spot-drawer-content")!;
+    scroller.scrollTop = 300;
+
+    root.querySelector<HTMLButtonElement>(".mode-toggle-gps")!.click();
+    // A real fix far from the picked spot: the resume's own frame-map, not
+    // the pick's, so this has to reset the scroll on its own.
+    gps.fix(TANTOLUNDEN);
+    await search.answer([TANTO]);
+
+    expect(scroller.scrollTop).toBe(0);
+  });
+
+  it("walking on does not pull the list out from under the reader", async () => {
+    const { root, gps, search } = mount();
+
+    gps.fix(TANTOLUNDEN);
+    await search.answer([TANTO, DRAKEN]);
+    const scroller = root.querySelector<HTMLElement>(".spot-drawer-content")!;
+    scroller.scrollTop = 300;
+
+    // Far enough to re-query while following — but GPS ticks never emit
+    // frame-map, so the scroll position must survive the re-render.
+    gps.fix(FAR_ENOUGH);
+    await search.answer([DRAKEN, TANTO]);
+
+    expect(scroller.scrollTop).toBe(300);
+  });
+});
+
 describe("when the lookup fails", () => {
   it("warns that the results are stale rather than blanking them", async () => {
     const { root, gps, search } = mount();
