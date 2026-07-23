@@ -194,7 +194,9 @@ describe("the note beside the chip", () => {
     if (!invitation) {
       throw new Error("a find beyond the first rung should invite the fix");
     }
-    expect(invitation.textContent).toContain("Know a hundbad that’s missing?");
+    expect(invitation.textContent).toContain(
+      "Know a bathing spot that’s missing?",
+    );
     const link = invitation.querySelector("a");
     if (!link) throw new Error("the invitation should link out to OSM");
     expect(link.getAttribute("href")).toBe(

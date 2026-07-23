@@ -47,9 +47,9 @@ function buildDataSection(): HTMLElement {
 
   const contribute = document.createElement("p");
   contribute.append(
-    "Dog park or hundbad missing? ",
-    externalLink(OSM_CONTRIBUTE_URL, "add it to OpenStreetMap"),
-    " and everyone gets it. Coverage is uneven — this app would rather show fewer places than invented ones.",
+    "Dog park or bathing spot missing? ",
+    externalLink(OSM_CONTRIBUTE_URL, "Add it to OpenStreetMap"),
+    " and everyone gets it.",
   );
 
   section.append(heading, credit, contribute);
