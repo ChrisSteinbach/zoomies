@@ -202,12 +202,13 @@ export function composeApp(root: HTMLElement, deps: AppDeps = {}): AppHandle {
     // maps app to open and whether to hand it an origin stays the machine's
     // one decision.
     onDirections: (id) => dispatch({ kind: "directions-requested", id }),
+    obscuredRight: obscuredMapWidth,
   });
 
   /**
    * How much of the map's right edge the open drawer is sitting over.
    *
-   * The map view takes this as a number rather than knowing the drawer
+   * The map view takes this as a callback rather than knowing the drawer
    * exists: a frame has to aim for the visible part of the viewport, and the
    * composition root is the one place that can see both elements. A drawer
    * covering the whole map reports zero — there is no visible sliver to aim
@@ -297,7 +298,7 @@ export function composeApp(root: HTMLElement, deps: AppDeps = {}): AppHandle {
         return;
 
       case "frame-spot":
-        map.frameSpot(effect.spot, effect.user, obscuredMapWidth());
+        map.frameSpot(effect.spot, effect.user);
         return;
 
       case "open-directions":

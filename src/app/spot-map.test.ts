@@ -535,6 +535,90 @@ describe("createSpotMap", () => {
     map.destroy();
   });
 
+  it("a deliberate frame centres the origin in the visible part of the map", () => {
+    const container = mount();
+    const map = createSpotMap(container, {
+      onSelect: vi.fn(),
+      onDirections: vi.fn(),
+      // A desktop drawer over the rightmost third: 130 of 390px, so the
+      // visible part is 260px wide and its midline sits at x=130.
+      obscuredRight: () => 130,
+    });
+
+    // The user picked a spot up in Vanadislunden. Centred in the visible
+    // part, the marker lands on that part's midpoint — centred in the whole
+    // container it would sit at 195px, hard against the drawer's edge.
+    const origin = { lat: VANADIS.lat, lon: VANADIS.lon };
+    map.frame(origin);
+    map.render([], origin, null);
+
+    const you = youAreHere(container)[0];
+    expect(you.style.left).toBe("130px");
+    expect(you.style.top).toBe("320px");
+
+    map.destroy();
+  });
+
+  it("the opening centring aims at the visible part of the map", () => {
+    const container = mount();
+    const map = createSpotMap(container, {
+      onSelect: vi.fn(),
+      onDirections: vi.fn(),
+      obscuredRight: () => 130,
+    });
+
+    // The searching render: no results yet, so the opening frame centres on
+    // the user — and with a drawer over the rightmost 130px, centred means
+    // the midpoint of the 260px still showing (x=130), not the container's
+    // own 195px.
+    map.render([], SLUSSEN, null);
+
+    const you = youAreHere(container)[0];
+    expect(you.style.left).toBe("130px");
+    expect(you.style.top).toBe("320px");
+
+    map.destroy();
+  });
+
+  it("the opening fit keeps the answer clear of the covered right edge", () => {
+    const container = mount();
+    const map = createSpotMap(container, {
+      onSelect: vi.fn(),
+      onDirections: vi.fn(),
+      // A desktop drawer over the rightmost 130px of 390 — the visible part
+      // ends at x=260.
+      obscuredRight: () => 130,
+    });
+    // ~0.0069° of longitude is ~161px at NEARBY_ZOOM (Web Mercator maps
+    // longitude straight to x, at 256·2¹⁵/360 ≈ 23302 px per degree). The
+    // pair fits at NEARBY_ZOOM with or without the inset — 161px goes into
+    // the 310px of symmetrically padded room as well as the 180px left once
+    // the covered strip joins the padding — so both fits land at the same
+    // zoom, and only the centring differs. A symmetric fit would centre the
+    // pair on the container's midline and put this pin at ≈195 + 161/2 =
+    // 275px: under the drawer. The inset shifts the fit's centre 65px west,
+    // to the visible part's midline, which the bound below detects.
+    const EAST = park({
+      id: "way/8003",
+      name: "Östlig hundrastgård",
+      lat: SLUSSEN.lat,
+      lon: SLUSSEN.lon + 0.0069,
+    });
+
+    map.render([EAST], SLUSSEN, null);
+
+    const pin = pinNamed(container, EAST.name!);
+    const you = youAreHere(container)[0];
+    for (const marker of [pin, you]) {
+      expect(parseFloat(marker.style.left)).toBeGreaterThanOrEqual(0);
+      expect(parseFloat(marker.style.left)).toBeLessThanOrEqual(260);
+      expect(parseFloat(marker.style.top)).toBeGreaterThanOrEqual(0);
+      expect(parseFloat(marker.style.top)).toBeLessThanOrEqual(640);
+    }
+
+    map.destroy();
+  });
+
   it("frames the results when they arrive after an empty searching render", () => {
     const container = mount();
     const map = createSpotMap(container, {
@@ -953,10 +1037,11 @@ describe("frameSpot", () => {
     const map = createSpotMap(container, {
       onSelect: vi.fn(),
       onDirections: vi.fn(),
+      obscuredRight: () => 200,
     });
     // A few hundred metres east of SLUSSEN: close enough that, framed on the
-    // user alone at NEARBY_ZOOM, it lands inside the 390px viewport — but
-    // within the rightmost 200px a caller can say a drawer covers.
+    // user at NEARBY_ZOOM, it lands inside the 390px viewport — but within
+    // the rightmost 200px the callback above says a drawer covers.
     const NEARBY = park({
       id: "way/8002",
       name: "Närliggande hundrastgård",
@@ -970,7 +1055,7 @@ describe("frameSpot", () => {
     const before = parseFloat(pinNamed(container, NEARBY.name!).style.left);
     expect(before).toBeGreaterThan(190); // inside the rightmost 200px of 390
 
-    map.frameSpot({ lat: NEARBY.lat, lon: NEARBY.lon }, SLUSSEN, 200);
+    map.frameSpot({ lat: NEARBY.lat, lon: NEARBY.lon }, SLUSSEN);
 
     const after = parseFloat(pinNamed(container, NEARBY.name!).style.left);
     expect(after).toBeLessThan(190);

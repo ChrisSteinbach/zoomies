@@ -201,6 +201,15 @@ export interface SpotMapOptions {
    * real one.
    */
   today?: Date;
+  /**
+   * How many pixels of the map's right edge are currently covered by chrome
+   * — the results drawer, in practice. Read at the moment of every
+   * programmatic reposition, so each aims at the visible part of the
+   * viewport rather than the whole container. The caller reports zero when
+   * the cover spans the whole map (there is no visible sliver to aim for);
+   * the view re-guards against that anyway. Defaults to "nothing covered".
+   */
+  obscuredRight?: () => number;
 }
 
 export interface SpotMapHandle {
@@ -218,8 +227,9 @@ export interface SpotMapHandle {
    * The one sanctioned exception to "the viewport belongs to the user"
    * (see {@link frameOnce}): the user has just said "look there" — picked a
    * spot, or asked to follow the device again from somewhere else — and
-   * centring on it is the looking. Ordinary movement must never come
-   * through here.
+   * centring on it is the looking. Centring aims at the visible part of the
+   * viewport when chrome covers the map's right edge. Ordinary movement
+   * must never come through here.
    */
   frame(position: LatLon): void;
   /**
@@ -229,12 +239,13 @@ export interface SpotMapHandle {
    *
    * Gentler than {@link frame}: a spot already comfortably in view moves
    * nothing, so tapping a visible pin never disturbs a viewport the user has
-   * set. Only when the spot is out of view (or under whatever the caller says
-   * is covering the map's right edge — `obscuredRight` pixels, a desktop
-   * drawer) does the map reposition, fitting spot and user together so the
-   * answer reads as "there, relative to you".
+   * set. Only when the spot is out of view (or under whatever the
+   * creation-time {@link SpotMapOptions.obscuredRight} callback says is
+   * covering the map's right edge — a desktop drawer) does the map
+   * reposition, fitting spot and user together so the answer reads as
+   * "there, relative to you".
    */
-  frameSpot(spot: LatLon, user: LatLon | null, obscuredRight?: number): void;
+  frameSpot(spot: LatLon, user: LatLon | null): void;
   /** Tears the map down and gives the container back as it was found. Safe to
    *  call more than once. */
   destroy(): void;
@@ -310,7 +321,7 @@ export function planMarkers(
  */
 export function createSpotMap(
   container: HTMLElement,
-  { onSelect, onDirections, today }: SpotMapOptions,
+  { onSelect, onDirections, today, obscuredRight = () => 0 }: SpotMapOptions,
 ): SpotMapHandle {
   container.classList.add("spot-map");
 
@@ -376,6 +387,33 @@ export function createSpotMap(
     } finally {
       repositioning = false;
     }
+  }
+
+  /** How much of the viewport's right edge is covered right now. A cover as
+   *  wide as the map means there is no visible sliver to aim for — the
+   *  caller is expected to have moved a full-width cover aside (the phone
+   *  drawer closes on select); failing that, the full viewport is the only
+   *  honest target left. */
+  function visibleInset(size: L.Point): number {
+    const covered = obscuredRight();
+    return covered < size.x ? covered : 0;
+  }
+
+  /**
+   * The centre the map must sit at for `position` to land in the middle of
+   * the *visible* (uncovered) width: shifting the centre half the inset east
+   * places the target half the inset west of the container's midline — the
+   * middle of the uncovered part. A pre-layout zero size yields inset 0 and
+   * the plain centre.
+   */
+  function visibleCentre(position: LatLon, zoom: number): L.LatLng {
+    const size = map.getSize();
+    const inset = visibleInset(size);
+    if (inset === 0) return L.latLng(position.lat, position.lon);
+    return map.unproject(
+      map.project([position.lat, position.lon], zoom).add([inset / 2, 0]),
+      zoom,
+    );
   }
 
   // Any movement this module did not make is the user taking the viewport:
@@ -647,7 +685,7 @@ export function createSpotMap(
       if (!centredOnUser) {
         centredOnUser = true;
         reposition(() =>
-          map.setView([position.lat, position.lon], NEARBY_ZOOM),
+          map.setView(visibleCentre(position, NEARBY_ZOOM), NEARBY_ZOOM),
         );
       }
       return;
@@ -666,9 +704,16 @@ export function createSpotMap(
     // zoom, and while that is pending an animated fit would be silently
     // swallowed (Map._tryAnimatedZoom returns early) — exactly the fast-answer
     // case a cached or offline dataset makes common.
+    //
+    // The covered strip is real map the fit must not aim into — the same
+    // rule frameSpot applies — so it is padding on top of the ordinary kind.
     reposition(() =>
       map.fitBounds(bounds, {
-        padding: FIT_PADDING,
+        paddingTopLeft: FIT_PADDING,
+        paddingBottomRight: [
+          FIT_PADDING[0] + visibleInset(size),
+          FIT_PADDING[1],
+        ],
         maxZoom: NEARBY_ZOOM,
         animate: false,
       }),
@@ -716,13 +761,15 @@ export function createSpotMap(
     frame(position) {
       if (destroyed) return;
 
-      reposition(() => map.setView([position.lat, position.lon], NEARBY_ZOOM));
+      reposition(() =>
+        map.setView(visibleCentre(position, NEARBY_ZOOM), NEARBY_ZOOM),
+      );
       // The frame is spent: from here the viewport belongs to the user again,
       // exactly as after frameOnce.
       framed = true;
     },
 
-    frameSpot(spot, user, obscuredRight = 0) {
+    frameSpot(spot, user) {
       if (destroyed) return;
 
       const target = L.latLng(spot.lat, spot.lon);
@@ -746,11 +793,7 @@ export function createSpotMap(
         return;
       }
 
-      // A cover as wide as the map means there is no visible sliver to aim
-      // for — the caller is expected to have moved the cover aside (the
-      // phone drawer closes on select); failing that, the full viewport is
-      // the only honest target left.
-      const inset = obscuredRight < size.x ? obscuredRight : 0;
+      const inset = visibleInset(size);
 
       /**
        * The minimal instant pan that brings the open callout's card wholly
