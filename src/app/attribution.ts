@@ -26,8 +26,10 @@ export const OSM_COPYRIGHT_URL = "https://www.openstreetmap.org/copyright";
  *
  * The honest answer to a missing dog park or hundbad is that OSM does not know
  * about it yet, and the fix is to add it (docs/spec.md §4.3). Saying so costs a
- * sentence — the About dialog (about.ts) says it — improves the commons rather
- * than just this app, and is the whole of what the MVP does about contribution:
+ * sentence — the About dialog (about.ts) says it, and the empty and thin
+ * answers say it at the moment the gap is on screen
+ * ({@link createContributionInvitation}) — improves the commons rather than
+ * just this app, and is the whole of what the MVP does about contribution:
  * no tooling.
  */
 export const OSM_CONTRIBUTE_URL = "https://www.openstreetmap.org/fixthemap";
@@ -92,13 +94,41 @@ function dataCredit(): HTMLParagraphElement {
  *
  * Opened in a new tab: this is a PWA holding a session's worth of results and a
  * position the user may have picked by hand, and navigating away would throw
- * all of it away to read a licence page.
+ * all of it away to read a licence page. Shared by every surface that links
+ * out — the credit line, the About dialog, the contribution invitation — so
+ * none of them can forget that.
  */
-function externalLink(href: string, text: string): HTMLAnchorElement {
+export function externalLink(href: string, text: string): HTMLAnchorElement {
   const link = document.createElement("a");
   link.href = href;
   link.textContent = text;
   link.target = "_blank";
   link.rel = "noopener noreferrer";
   return link;
+}
+
+/**
+ * The invitation to fix a data gap: "Know a hundbad that’s missing? Add it
+ * to OpenStreetMap."
+ *
+ * "Fewer results rather than confident wrong ones" (docs/spec.md §3) leaves
+ * the app honest but empty-handed exactly where OSM is thin, and §4.3 says
+ * the long-term fix — the user adding the missing place — is worth naming in
+ * the UI. This is that sentence, rendered at the one moment it can land:
+ * when an answer has just come back empty or far, and the reader is looking
+ * at a gap they may personally know how to fill.
+ *
+ * A span rather than a paragraph so it can sit inside an existing note's
+ * live region and be announced together with the finding it follows from, or
+ * be wrapped in a block of its own by a card with more room.
+ */
+export function createContributionInvitation(subject: string): HTMLElement {
+  const line = document.createElement("span");
+  line.className = "contribute-invitation";
+  line.append(
+    `Know a ${subject} that’s missing? `,
+    externalLink(OSM_CONTRIBUTE_URL, "Add it to OpenStreetMap"),
+    ".",
+  );
+  return line;
 }

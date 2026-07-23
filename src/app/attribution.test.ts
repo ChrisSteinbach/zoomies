@@ -1,6 +1,11 @@
 // @vitest-environment jsdom
 
-import { OSM_DATA_CREDIT, createAttribution } from "./attribution";
+import {
+  OSM_CONTRIBUTE_URL,
+  OSM_DATA_CREDIT,
+  createAttribution,
+  createContributionInvitation,
+} from "./attribution";
 import { createMapPicker } from "./map-picker";
 import { createSpotMap } from "./spot-map";
 
@@ -67,6 +72,38 @@ describe("createAttribution", () => {
     // the chrome rather than part of any view.
     expect(attributionText()).toBe(attributionText());
     expect(attributionText()).toContain(OSM_DATA_CREDIT);
+  });
+});
+
+describe("createContributionInvitation", () => {
+  it("says exactly what's missing, in the caller's words", () => {
+    const invitation = createContributionInvitation("hundbad");
+
+    expect(invitation.textContent).toBe(
+      "Know a hundbad that’s missing? Add it to OpenStreetMap.",
+    );
+  });
+
+  it("carries the class its callers render it by", () => {
+    const invitation = createContributionInvitation("hundbad");
+
+    // layer-toggle.ts appends this inside a live-region note and
+    // status-view.ts inside a card; both find it again, and their tests
+    // assert on it, by this class rather than by its words.
+    expect(invitation.classList.contains("contribute-invitation")).toBe(true);
+  });
+
+  it("links out to the fix-the-map page, safely", () => {
+    const invitation = createContributionInvitation("hundbad");
+
+    const link = invitation.querySelector("a");
+    if (!link) throw new Error("the invitation should carry a link");
+    expect(link.getAttribute("href")).toBe(OSM_CONTRIBUTE_URL);
+    expect(link.textContent).toBe("Add it to OpenStreetMap");
+    // Same reasoning as every other outbound link on this page: a tap must
+    // not throw away the results sitting behind it.
+    expect(link.target).toBe("_blank");
+    expect(link.rel).toBe("noopener noreferrer");
   });
 });
 

@@ -638,6 +638,10 @@ describe("the bathing layer, wired", () => {
       "Tantolundens hundrastgård",
       "Smedsuddsbadets hundbad",
     ]);
+    // The toggle's own note, wired to the live position: HUNDBADET sits
+    // ~330 m from the fix, under the note's 1 km cutoff for naming a
+    // distance, so it reports the count alone.
+    expect(root.textContent).toContain("1 bathing spot.");
   });
 
   it("takes the bathing rows back out when toggled off", async () => {

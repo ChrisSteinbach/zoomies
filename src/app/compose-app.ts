@@ -407,7 +407,7 @@ export function composeApp(root: HTMLElement, deps: AppDeps = {}): AppHandle {
       onPick: () => dispatch({ kind: "pick-requested" }),
     });
 
-    renderLayerToggle(layersElement, state.bathing, {
+    renderLayerToggle(layersElement, state.bathing, position, {
       onToggle: () => dispatch({ kind: "bathing-toggled" }),
       onRetry: () => dispatch({ kind: "bathing-retry-requested" }),
     });
