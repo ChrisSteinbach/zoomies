@@ -123,6 +123,14 @@ Notes:
    permission.
 4. Features can be nodes, ways, or relations — always handle all
    three (`nwr` in Overpass).
+5. **One real place may be mapped twice** — a POI node beside or
+   inside an area tracing the same facility (~0.8% of spots in the
+   published dataset). Collapse the node onto a same-kind area within
+   ~50 m when their names agree case-insensitively or at least one
+   side is unnamed; keep the area, it is the geometry OSM considers
+   primary. Never collapse node-vs-node or area-vs-area pairs: two
+   nearby same-name areas are plausibly two genuine sections of one
+   facility — two honest results.
 
 ## 5. Getting the Data
 
@@ -164,6 +172,8 @@ Response handling:
 - `out center;` returns `lat`/`lon` for nodes and a `center` object
   for ways/relations — normalize both to a single point per feature.
 - Deduplicate (the union query can match a feature twice).
+- Collapse node+area double-mapping per §4.5 — after translation, and
+  identically for this option and Option B.
 - Start with radius ≈ 3 km and expand (e.g. 3 → 10 → 25 km) until
   N results are found, rather than one huge query.
 
