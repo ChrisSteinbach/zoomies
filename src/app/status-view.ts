@@ -310,7 +310,7 @@ function empty(searchedRadiusM: number, position: LatLon): StatusContent {
       ...base,
       title: `No dog parks mapped within ${formatDistance(searchedRadiusM)}`,
       detail:
-        "Few dog parks are mapped in this part of the world, so this says more about the map than the ground — there may well be one nearby that nobody has added to OpenStreetMap yet.",
+        "Few dog parks are mapped in this part of the world. There may well be one nearby that nobody has added to OpenStreetMap yet.",
     };
   }
 
