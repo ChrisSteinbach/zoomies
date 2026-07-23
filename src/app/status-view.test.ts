@@ -295,7 +295,7 @@ describe("renderStatus, having found nothing", () => {
 
     expect(words(container)).toContain("No dog parks mapped within 25 km");
     expect(words(container)).toContain(
-      "says more about the map than the ground",
+      "Few dog parks are mapped in this part of the world",
     );
   });
 
@@ -310,7 +310,7 @@ describe("renderStatus, having found nothing", () => {
     renderStatus(container, phase, callbacks());
 
     expect(words(container)).toContain("No dog parks within 25 km");
-    expect(words(container)).not.toContain("says more about the map");
+    expect(words(container)).not.toContain("Few dog parks are mapped");
   });
 
   it("offers thin-mapped emptiness the same single move: search elsewhere", () => {
