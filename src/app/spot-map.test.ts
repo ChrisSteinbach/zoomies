@@ -535,6 +535,130 @@ describe("createSpotMap", () => {
     map.destroy();
   });
 
+  it("frames the results when they arrive after an empty searching render", () => {
+    const container = mount();
+    const map = createSpotMap(container, {
+      onSelect: vi.fn(),
+      onDirections: vi.fn(),
+    });
+
+    // The searching render: no results yet, so the opening frame only gets as
+    // far as centring on the user (see "centres on the user when there are
+    // no results to frame").
+    map.render([], SLUSSEN, null);
+    const you = youAreHere(container)[0];
+    expect(you.style.left).toBe("195px");
+    expect(you.style.top).toBe("320px");
+
+    // The answer lands a render later, with the opening frame still unspent —
+    // this is the bug itself. It used to be spent on the render above, so the
+    // fit below never got the chance to run.
+    map.render([VANADIS], SLUSSEN, null);
+
+    // VANADIS sits a few kilometres due north of SLUSSEN, so a fit that
+    // includes it pulls the view north and off the user's midpoint.
+    expect(you.style.top).not.toBe("320px");
+
+    // And the fit reaches all the way to VANADIS: left at the user-centred
+    // view above, its pin would sit far above the visible container instead.
+    const pin = pinNamed(container, VANADIS.name!);
+    expect(parseFloat(pin.style.left)).toBeGreaterThanOrEqual(0);
+    expect(parseFloat(pin.style.left)).toBeLessThanOrEqual(390);
+    expect(parseFloat(pin.style.top)).toBeGreaterThanOrEqual(0);
+    expect(parseFloat(pin.style.top)).toBeLessThanOrEqual(640);
+
+    map.destroy();
+  });
+
+  it("keeps the viewport still while the search runs and the user walks", () => {
+    const container = mount();
+    const map = createSpotMap(container, {
+      onSelect: vi.fn(),
+      onDirections: vi.fn(),
+    });
+
+    map.render([], SLUSSEN, null);
+    const you = youAreHere(container)[0];
+    expect(you.style.left).toBe("195px");
+    expect(you.style.top).toBe("320px");
+
+    // A GPS tick ~150m on, the same step "follows the user without dragging
+    // the map along" uses — still nothing back from the search.
+    map.render([], { lat: 59.3205, lon: 18.0729 }, null);
+
+    // The dot followed the user rather than staying put: a second centring
+    // would have put it right back on the midpoint it started at.
+    expect(you.style.left).not.toBe("195px");
+    expect(you.style.top).not.toBe("320px");
+
+    map.destroy();
+  });
+
+  it("leaves a viewport the user has taken alone when the results arrive", () => {
+    const container = mount();
+    const map = createSpotMap(container, {
+      onSelect: vi.fn(),
+      onDirections: vi.fn(),
+    });
+
+    map.render([], SLUSSEN, null);
+    const beforeZoom = placedAt(youAreHere(container)[0]);
+
+    // The user takes the map mid-search: a double-click zoom, Leaflet's own
+    // gesture rather than anything this module drives, dispatched on the
+    // element Leaflet was mounted on. jsdom has no 3D-transform support, so
+    // Leaflet treats the zoom as one it cannot animate and applies it
+    // synchronously instead of queuing a CSS transition this test would
+    // never see finish.
+    const canvas = container.querySelector(".spot-map-canvas")!;
+    canvas.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+
+    // The gesture must actually have reached Leaflet, or the rest of this
+    // test asserts nothing.
+    const afterZoom = placedAt(youAreHere(container)[0]);
+    expect(afterZoom).not.toBe(beforeZoom);
+
+    // The results land after the user has already taken the viewport: the
+    // movestart the zoom fired stood the opening frame down, so this render
+    // must leave the view exactly where the user put it.
+    map.render([VANADIS], SLUSSEN, null);
+
+    expect(placedAt(youAreHere(container)[0])).toBe(afterZoom);
+
+    map.destroy();
+  });
+
+  it("a deliberate frame is not re-spent by results that arrive later", () => {
+    const container = mount();
+    const map = createSpotMap(container, {
+      onSelect: vi.fn(),
+      onDirections: vi.fn(),
+    });
+
+    // The user picked a spot up in Vanadislunden — the same reposition "goes
+    // where a deliberate reposition points it" exercises.
+    const origin = { lat: VANADIS.lat, lon: VANADIS.lon };
+    map.frame(origin);
+    map.render([], origin, null);
+
+    const you = youAreHere(container)[0];
+    expect(you.style.left).toBe("195px");
+    expect(you.style.top).toBe("320px");
+
+    // BJORNS is the picked neighbourhood's own answer, arriving a render
+    // later — a fit to include it (BJORNS sits a few km south) would move
+    // the dot off the midpoint. The picked point stays the thing being
+    // looked at (state-machine.ts's position-picked comment): frame() has
+    // already spent the opening frame, and results arriving afterwards must
+    // not spend it again.
+    map.render([BJORNS], origin, null);
+
+    expect(you.style.left).toBe("195px");
+    expect(you.style.top).toBe("320px");
+
+    map.destroy();
+  });
+
   it("takes down the pins of results that are gone", () => {
     const container = mount();
     const map = createSpotMap(container, {

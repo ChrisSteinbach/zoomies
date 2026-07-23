@@ -351,10 +351,44 @@ export function createSpotMap(
   /** What the pins are currently drawn as, so a selection change repaints the
    *  two pins that changed rather than all of them. */
   let shownSelectedId: string | null = null;
-  /** Whether the map has been pointed at the results yet. Once it has, the
-   *  viewport belongs to the user. */
+  /** Whether the opening frame has been spent — pointed at the first results,
+   *  overtaken by a deliberate {@link SpotMapHandle.frame}, or claimed by the
+   *  user's own hand on the map. Once it has, the viewport belongs to the
+   *  user. */
   let framed = false;
+  /** Whether the map has pointed itself at the user while the first answer
+   *  was still on its way. Done once: a search can outlive several renders,
+   *  and re-centring on each would drag the map out from under a user who
+   *  had started looking around. */
+  let centredOnUser = false;
+  /** True while this module is itself moving the map, so the claim listener
+   *  below can tell its own repositions from the user's hand. */
+  let repositioning = false;
   let destroyed = false;
+
+  /** Every programmatic move this module makes goes through here, without
+   *  exception — the fence is what lets any movement outside it be read as
+   *  the user's. */
+  function reposition(move: () => void): void {
+    repositioning = true;
+    try {
+      move();
+    } finally {
+      repositioning = false;
+    }
+  }
+
+  // Any movement this module did not make is the user taking the viewport:
+  // from then on it is theirs, and the opening frame — which may still be
+  // waiting for the first results — stands down rather than yank the map
+  // away from wherever they are looking. Attached *after* the bounds
+  // tracker's install() above, whose zoom-floor clamp at creation would
+  // otherwise read as a user zoom. (Its resize-time clamp can still slip
+  // through — rotating the phone mid-search at the world view — which costs
+  // only the opening fit, never a viewport the user has set.)
+  map.on("movestart zoomstart", () => {
+    if (!repositioning) framed = true;
+  });
 
   /**
    * The callout: one popup, moved from pin to pin as the selection moves.
@@ -579,13 +613,23 @@ export function createSpotMap(
   }
 
   /**
-   * Point the map at the results — once.
+   * Point the map at the results — once, on the first render that has any.
    *
-   * Every later render leaves the viewport exactly where it is. A GPS tick
-   * arrives every second or so, and re-centring on each one would drag the map
-   * out from under a user who had panned somewhere to look at it. The one way
-   * to move it again is {@link SpotMapHandle.frame}, which only a deliberate
-   * reposition reaches.
+   * The first render with a position is usually the *searching* one: the
+   * query is still in flight and there is nothing to fit yet. So the opening
+   * frame arrives in two steps — centre on the user while the answer is on
+   * its way, then fit user and results together on the first render that
+   * carries spots. Only the fit spends the frame; searched-and-found-nothing
+   * leaves the centred view as the answer, and a layer switched on later can
+   * still be the first thing worth fitting.
+   *
+   * Every render after the frame is spent leaves the viewport exactly where
+   * it is. A GPS tick arrives every second or so, and re-centring on each one
+   * would drag the map out from under a user who had panned somewhere to look
+   * at it — and the user touching the map before the results land spends the
+   * frame the same way (see the movestart listener above), so a slow search
+   * never snatches the viewport back. The one way to move it again is
+   * {@link SpotMapHandle.frame}, which only a deliberate reposition reaches.
    */
   function frameOnce(spots: DogSpot[], position: LatLon): void {
     if (framed) return;
@@ -595,16 +639,21 @@ export function createSpotMap(
       // The container has not been laid out yet — a fit computed against a
       // zero-sized viewport is meaningless. Centre on the user and try again
       // on a later render, once there is something to fit against.
-      map.setView([position.lat, position.lon], NEARBY_ZOOM);
+      reposition(() => map.setView([position.lat, position.lon], NEARBY_ZOOM));
+      return;
+    }
+
+    if (spots.length === 0) {
+      if (!centredOnUser) {
+        centredOnUser = true;
+        reposition(() =>
+          map.setView([position.lat, position.lon], NEARBY_ZOOM),
+        );
+      }
       return;
     }
 
     framed = true;
-
-    if (spots.length === 0) {
-      map.setView([position.lat, position.lon], NEARBY_ZOOM);
-      return;
-    }
 
     // The user is always in frame: a map of dog parks that does not show where
     // the user is standing cannot be read as distances.
@@ -613,7 +662,17 @@ export function createSpotMap(
       bounds.extend([spot.lat, spot.lon]);
     }
 
-    map.fitBounds(bounds, { padding: FIT_PADDING, maxZoom: NEARBY_ZOOM });
+    // Instant for frameSpot's reason: the centring above starts an animated
+    // zoom, and while that is pending an animated fit would be silently
+    // swallowed (Map._tryAnimatedZoom returns early) — exactly the fast-answer
+    // case a cached or offline dataset makes common.
+    reposition(() =>
+      map.fitBounds(bounds, {
+        padding: FIT_PADDING,
+        maxZoom: NEARBY_ZOOM,
+        animate: false,
+      }),
+    );
   }
 
   return {
@@ -657,7 +716,7 @@ export function createSpotMap(
     frame(position) {
       if (destroyed) return;
 
-      map.setView([position.lat, position.lon], NEARBY_ZOOM);
+      reposition(() => map.setView([position.lat, position.lon], NEARBY_ZOOM));
       // The frame is spent: from here the viewport belongs to the user again,
       // exactly as after frameOnce.
       framed = true;
@@ -683,7 +742,7 @@ export function createSpotMap(
       // straight at the spot, as frameOnce's fallback points at the user.
       if (size.x <= 0 || size.y <= 0) {
         framed = true;
-        map.setView(target, NEARBY_ZOOM, instant);
+        reposition(() => map.setView(target, NEARBY_ZOOM, instant));
         return;
       }
 
@@ -727,7 +786,9 @@ export function createSpotMap(
         }
         const dy = top < margin ? top - margin : 0;
 
-        if (dx !== 0 || dy !== 0) map.panBy([dx, dy], { animate: false });
+        if (dx !== 0 || dy !== 0) {
+          reposition(() => map.panBy([dx, dy], { animate: false }));
+        }
       }
 
       // Already comfortably in view — clear of the edges and of whatever
@@ -750,7 +811,7 @@ export function createSpotMap(
       framed = true;
 
       if (!user) {
-        map.setView(target, NEARBY_ZOOM, instant);
+        reposition(() => map.setView(target, NEARBY_ZOOM, instant));
         nudgeCalloutIntoView();
         return;
       }
@@ -769,12 +830,14 @@ export function createSpotMap(
       // Spot and user together: "there, relative to you" is what a selection
       // asks the map for. The asymmetric padding keeps both out from under a
       // desktop drawer as well as off the edges.
-      map.fitBounds(L.latLngBounds([target, [user.lat, user.lon]]), {
-        paddingTopLeft: [sidePad, topPad],
-        paddingBottomRight: [sidePad + inset, padY],
-        maxZoom: NEARBY_ZOOM,
-        ...instant,
-      });
+      reposition(() =>
+        map.fitBounds(L.latLngBounds([target, [user.lat, user.lon]]), {
+          paddingTopLeft: [sidePad, topPad],
+          paddingBottomRight: [sidePad + inset, padY],
+          maxZoom: NEARBY_ZOOM,
+          ...instant,
+        }),
+      );
       // The padding above should have made this a no-op; a maxZoom-bound
       // fit of two very close points is the one case with slack left.
       nudgeCalloutIntoView();
