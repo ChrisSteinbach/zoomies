@@ -25,6 +25,10 @@ import { haversineMeters } from "./geo";
 export const REQUERY_DISTANCE_M = 250;
 
 export type Phase =
+  /** The front door: the app is up but has not yet reached for a position.
+   *  A deliberate pause before the permission prompt — the visitor chooses to
+   *  share their location or to set a spot by hand (docs/spec.md §7.1). */
+  | { kind: "welcome" }
   /** Waiting for the first fix, or for the user to answer the permission
    *  prompt. */
   | { kind: "locating" }
@@ -107,7 +111,8 @@ export interface AppState {
 }
 
 export type Event =
-  | { kind: "started" }
+  /** The visitor chose to share their location from the welcome screen. */
+  | { kind: "location-requested" }
   | { kind: "position-fixed"; position: LatLon }
   | { kind: "location-failed"; reason: LocationErrorCode }
   | { kind: "pick-requested" }
@@ -191,7 +196,7 @@ export interface TransitionResult {
 }
 
 export const initialState: AppState = {
-  phase: { kind: "locating" },
+  phase: { kind: "welcome" },
   positionSource: null,
   pickerOpen: false,
   bathing: { kind: "off" },
@@ -209,8 +214,17 @@ export function transition(state: AppState, event: Event): TransitionResult {
 
 function decide(state: AppState, event: Event): TransitionResult {
   switch (event.kind) {
-    case "started":
-      return { next: state, effects: [{ kind: "watch-location" }] };
+    case "location-requested":
+      // The welcome screen's primary choice: begin the hunt for a position.
+      // Only from `welcome` — every other phase already has a position, a
+      // running watcher, or the dead end's own retry, so starting one here
+      // would be churn. The mirror of `location-retry-requested`, which is
+      // the same act from the dead end rather than the front door.
+      if (state.phase.kind !== "welcome") return stay(state);
+      return {
+        next: { ...state, phase: { kind: "locating" } },
+        effects: [{ kind: "watch-location" }],
+      };
 
     case "position-fixed":
       return positionFixed(state, event.position);
@@ -465,6 +479,11 @@ function positionFixed(state: AppState, position: LatLon): TransitionResult {
   const withGps = { ...state, positionSource: "gps" as const };
 
   switch (state.phase.kind) {
+    // The position-less phases share one rule: the first fix is where the
+    // search begins. `welcome` is unreachable in practice — its watcher has
+    // not started, so no fix can arrive — but it is a position-less phase, and
+    // grouping it here keeps the switch total without a branch of its own.
+    case "welcome":
     case "locating":
     case "needs-position":
       return {
@@ -629,6 +648,7 @@ function hasPosition(state: AppState): boolean {
 
 function positionOf(phase: Phase): LatLon | null {
   switch (phase.kind) {
+    case "welcome":
     case "locating":
     case "needs-position":
       return null;

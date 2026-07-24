@@ -216,12 +216,56 @@ async function centreOf(locator: Locator): Promise<Point> {
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 }
 
+/**
+ * Get past the welcome screen the way a visitor bound for results does: tap its
+ * primary button, "Use my location" (src/app/status-view.ts). The app now opens
+ * on that front door and reaches for a position only when asked, so this tap is
+ * what fires the location request the app once fired on load — the gesture every
+ * flow below starts from.
+ *
+ * The refused-permission flow goes through this same button on purpose: the tap
+ * is what triggers the denial, which is exactly the dead end the picker exists
+ * to rescue. What differs between the granted and refused suites is the
+ * permission the context was handed, not the way in.
+ */
+async function useMyLocation(page: Page): Promise<void> {
+  await page.getByRole("button", { name: "Use my location" }).click();
+}
+
+test.describe("the welcome screen", () => {
+  test("fills the width rather than leaving an empty half beside it", async ({
+    context,
+    page,
+  }) => {
+    await stubNetwork(context);
+    await page.goto("/");
+
+    // The front door, before any choice is made. With no position there is no
+    // map to keep a half for, so the sheet spans the whole viewport. On a wide
+    // screen it is otherwise pinned to half (spot-drawer.css), which left the
+    // welcome card beside an empty grey panel — a split that read as a broken
+    // app rather than a waiting one. The split returns with the map, once a
+    // position exists; the position-shared tests below cover that side.
+    await expect(
+      page.getByRole("button", { name: "Use my location" }),
+    ).toBeVisible();
+
+    const drawerBox = await page.locator(".spot-drawer").boundingBox();
+    const viewport = page.viewportSize();
+    if (drawerBox === null || viewport === null) {
+      throw new Error("the open drawer and the viewport should both exist");
+    }
+    expect(drawerBox.width).toBeGreaterThanOrEqual(viewport.width);
+  });
+});
+
 test.describe("with the device's position shared", () => {
   test.use({ permissions: ["geolocation"], geolocation: STOCKHOLM });
 
   test("the nearest park heads the result list", async ({ context, page }) => {
     await stubNetwork(context);
     await page.goto("/");
+    await useMyLocation(page);
 
     // The harness's own sanity check: a granted permission and a stubbed
     // Overpass really do land on results. Everything below assumes it.
@@ -236,6 +280,7 @@ test.describe("with the device's position shared", () => {
   }) => {
     await stubNetwork(context);
     await page.goto("/");
+    await useMyLocation(page);
 
     // The stub answers instantly, but it still lands a render after the
     // searching one — the sequence that once let the map plant its opening
@@ -282,6 +327,7 @@ test.describe("with the device's position shared", () => {
       return route.abort();
     });
     await page.goto("/");
+    await useMyLocation(page);
 
     // The red pin is drawn once a position is known, found parks or not.
     const you = page.locator(".spot-map-you");
@@ -313,6 +359,7 @@ test.describe("with the device's position shared", () => {
   test("a closed drawer can be reopened", async ({ context, page }) => {
     await stubNetwork(context);
     await page.goto("/");
+    await useMyLocation(page);
 
     const handle = page.getByRole("button", { name: DRAWER_HANDLE });
     const firstRow = page.locator(".spot-list-item").first();
@@ -341,6 +388,7 @@ test.describe("with the device's position shared", () => {
   }) => {
     await stubNetwork(context, { copies: 10 });
     await page.goto("/");
+    await useMyLocation(page);
 
     const rows = page.locator(".spot-list-item");
     await expect(rows.first()).toBeVisible();
@@ -380,6 +428,7 @@ test.describe("with the device's position shared", () => {
   }) => {
     await stubNetwork(context);
     await page.goto("/");
+    await useMyLocation(page);
     await expect(page.locator(".spot-list-item").first()).toBeVisible();
 
     // Following the device: the GPS side is pressed, and both clicks below
@@ -425,6 +474,7 @@ test.describe("with the device's position shared", () => {
     // §2.2), and after a reposition the top is where the answer begins.
     await stubNetwork(context, { copies: 10 });
     await page.goto("/");
+    await useMyLocation(page);
 
     const content = page.locator(".spot-drawer-content");
     await expect(page.locator(".spot-list-item").first()).toBeVisible();
@@ -458,6 +508,7 @@ test.describe("with the device's position shared", () => {
   }) => {
     await stubNetwork(context);
     await page.goto("/");
+    await useMyLocation(page);
     await expect(page.locator(".spot-list-item").first()).toBeVisible();
 
     // Visible attribution is an ODbL obligation (docs/spec.md §4.1), so it is
@@ -498,6 +549,7 @@ test.describe("with the bathing layer", () => {
     await stubNetwork(context);
     await page.clock.setFixedTime(IN_BAN_SEASON);
     await page.goto("/");
+    await useMyLocation(page);
 
     await expect(rowFor(page, NEAREST_PARK)).toBeVisible();
     return page.getByRole("button", { name: BATHING_CHIP });
@@ -584,6 +636,7 @@ test.describe("with a result selected", () => {
   }) => {
     await stubNetwork(context);
     await page.goto("/");
+    await useMyLocation(page);
 
     const firstRow = page.locator(".spot-list-select").first();
     await expect(firstRow).toBeVisible();
@@ -635,6 +688,7 @@ test.describe("with a result selected", () => {
   }) => {
     await stubNetwork(context);
     await page.goto("/");
+    await useMyLocation(page);
 
     const firstRow = page.locator(".spot-list-select").first();
     await expect(firstRow).toBeVisible();
@@ -655,6 +709,7 @@ test.describe("with a result selected", () => {
   }) => {
     await stubNetwork(context);
     await page.goto("/");
+    await useMyLocation(page);
 
     const firstRow = page.locator(".spot-list-select").first();
     await expect(firstRow).toBeVisible();
@@ -680,6 +735,7 @@ test.describe("with location sharing refused", () => {
   test("the picker opens on top of the sheet", async ({ context, page }) => {
     await stubNetwork(context);
     await page.goto("/");
+    await useMyLocation(page);
 
     await page.getByRole("button", { name: PICK_POSITION }).click();
 
@@ -712,6 +768,7 @@ test.describe("with location sharing refused", () => {
   }) => {
     await stubNetwork(context);
     await page.goto("/");
+    await useMyLocation(page);
 
     // The phase with no map at all, where the sheet is at its largest — an
     // earlier credit bar sat under it and vanished exactly here.

@@ -42,15 +42,23 @@ const showingResults: Event[] = [
 ];
 
 describe("finding the user", () => {
-  it("starts watching the GPS as soon as the app opens", () => {
-    const { effects } = run([{ kind: "started" }]);
+  it("opens on the welcome screen without reaching for the GPS", () => {
+    // The app is up but has started no watcher and asked for no permission;
+    // it is waiting for the visitor to choose (docs/spec.md §7.1).
+    expect(initialState.phase).toEqual({ kind: "welcome" });
+    expect(run([]).effects).toEqual([]);
+  });
 
+  it("starts watching the GPS when the visitor asks to use their location", () => {
+    const { state, effects } = run([{ kind: "location-requested" }]);
+
+    expect(state.phase).toEqual({ kind: "locating" });
     expect(effects).toEqual([{ kind: "watch-location" }]);
   });
 
   it("searches as soon as it knows where the user is", () => {
     const { state, effects } = run([
-      { kind: "started" },
+      { kind: "location-requested" },
       { kind: "position-fixed", position: TANTOLUNDEN },
     ]);
 
@@ -60,7 +68,7 @@ describe("finding the user", () => {
 
   it("offers the manual picker when the user refuses the permission", () => {
     const { state, effects } = run([
-      { kind: "started" },
+      { kind: "location-requested" },
       { kind: "location-failed", reason: "PERMISSION_DENIED" },
     ]);
 
@@ -78,6 +86,51 @@ describe("finding the user", () => {
     ]);
 
     expect(state.phase.kind).toBe("ready");
+  });
+});
+
+describe("the welcome screen", () => {
+  it("opens the picker straight from the welcome screen", () => {
+    const { state, effects } = run([{ kind: "pick-requested" }]);
+
+    expect(state.pickerOpen).toBe(true);
+    expect(state.phase).toEqual({ kind: "welcome" });
+    expect(effects).toEqual([{ kind: "open-picker" }]);
+  });
+
+  it("returns to the welcome screen when the picker is cancelled", () => {
+    const { state } = run([
+      { kind: "pick-requested" },
+      { kind: "pick-cancelled" },
+    ]);
+
+    expect(state.pickerOpen).toBe(false);
+    expect(state.phase).toEqual({ kind: "welcome" });
+  });
+
+  it("searches from a spot picked on the welcome screen, without a watcher", () => {
+    const { state, effects } = run([
+      { kind: "pick-requested" },
+      { kind: "position-picked", position: TANTOLUNDEN },
+    ]);
+
+    expect(state.positionSource).toBe("picked");
+    expect(state.phase).toMatchObject({
+      kind: "searching",
+      position: TANTOLUNDEN,
+    });
+    expect(effects).toContainEqual({ kind: "search", position: TANTOLUNDEN });
+  });
+
+  it("ignores a second location request once past the welcome screen", () => {
+    // The first left `welcome` for `locating` and started the watcher; a
+    // second has nothing to do.
+    const { effects } = run([
+      { kind: "location-requested" },
+      { kind: "location-requested" },
+    ]);
+
+    expect(effects).toEqual([]);
   });
 });
 
@@ -102,7 +155,7 @@ describe("picking a position by hand", () => {
 
   it("searches from the picked spot and stops following the GPS", () => {
     const { state, effects } = run([
-      { kind: "started" },
+      { kind: "location-requested" },
       { kind: "location-failed", reason: "PERMISSION_DENIED" },
       { kind: "pick-requested" },
       { kind: "position-picked", position: TANTOLUNDEN },
@@ -385,7 +438,7 @@ describe("when the search fails", () => {
 
   it("asks the device again when the user retries from the dead end", () => {
     const { state, effects } = run([
-      { kind: "started" },
+      { kind: "location-requested" },
       { kind: "location-failed", reason: "TIMEOUT" },
       { kind: "location-retry-requested" },
     ]);
@@ -406,7 +459,7 @@ describe("when the search fails", () => {
 
   it("has nothing to retry while it does not know where the user is", () => {
     const { state, effects } = run([
-      { kind: "started" },
+      { kind: "location-requested" },
       { kind: "location-failed", reason: "PERMISSION_DENIED" },
       { kind: "retry-requested" },
     ]);
@@ -581,7 +634,7 @@ describe("the bathing layer", () => {
 
   it("stays off when there is nowhere to search from", () => {
     const { state, effects } = run([
-      { kind: "started" },
+      { kind: "location-requested" },
       { kind: "bathing-toggled" },
     ]);
 

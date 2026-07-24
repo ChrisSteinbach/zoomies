@@ -275,6 +275,14 @@ body {
   font-weight: 600;
 }
 
+/* The welcome screen is a takeover like the others, but the app's front door
+   rather than a passing status — so its title carries the app's name at a
+   size to match. Everything else (centring, the two buttons, focus rings) it
+   takes from the shared card rules. */
+.status-card[data-status="welcome"] .status-title {
+  font-size: 1.375rem;
+}
+
 .status-detail {
   margin: 0.5rem 0 0;
   color: #444;
@@ -643,6 +651,19 @@ body {
  * is decoration, and the status has something to say instead. */
 .app[data-has-position="false"] .app-map {
   display: none;
+}
+
+/* With the map gone there is no half to keep for it, so the sheet takes the
+ * whole width until a position exists. On a wide screen the sheet is otherwise
+ * pinned to half (spot-drawer.css), which left the welcome and locating screens
+ * as a card beside an empty grey panel — a split that read as a broken app
+ * rather than a waiting one. The map and its half return together the moment
+ * there is a position to put on it, which is the choice the visitor came to
+ * make. */
+@media (width >= 1024px) {
+  .app[data-has-position="false"] .spot-drawer {
+    width: 100%;
+  }
 }
 
 /* The picker covers everything, including the sheet and the credit bar — while
