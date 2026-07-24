@@ -653,6 +653,19 @@ body {
   display: none;
 }
 
+/* With the map gone there is no half to keep for it, so the sheet takes the
+ * whole width until a position exists. On a wide screen the sheet is otherwise
+ * pinned to half (spot-drawer.css), which left the welcome and locating screens
+ * as a card beside an empty grey panel — a split that read as a broken app
+ * rather than a waiting one. The map and its half return together the moment
+ * there is a position to put on it, which is the choice the visitor came to
+ * make. */
+@media (width >= 1024px) {
+  .app[data-has-position="false"] .spot-drawer {
+    width: 100%;
+  }
+}
+
 /* The picker covers everything, including the sheet and the credit bar — while
  * it is open, choosing a position is the only thing to do.
  *

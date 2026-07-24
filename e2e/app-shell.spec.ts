@@ -232,6 +232,33 @@ async function useMyLocation(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Use my location" }).click();
 }
 
+test.describe("the welcome screen", () => {
+  test("fills the width rather than leaving an empty half beside it", async ({
+    context,
+    page,
+  }) => {
+    await stubNetwork(context);
+    await page.goto("/");
+
+    // The front door, before any choice is made. With no position there is no
+    // map to keep a half for, so the sheet spans the whole viewport. On a wide
+    // screen it is otherwise pinned to half (spot-drawer.css), which left the
+    // welcome card beside an empty grey panel — a split that read as a broken
+    // app rather than a waiting one. The split returns with the map, once a
+    // position exists; the position-shared tests below cover that side.
+    await expect(
+      page.getByRole("button", { name: "Use my location" }),
+    ).toBeVisible();
+
+    const drawerBox = await page.locator(".spot-drawer").boundingBox();
+    const viewport = page.viewportSize();
+    if (drawerBox === null || viewport === null) {
+      throw new Error("the open drawer and the viewport should both exist");
+    }
+    expect(drawerBox.width).toBeGreaterThanOrEqual(viewport.width);
+  });
+});
+
 test.describe("with the device's position shared", () => {
   test.use({ permissions: ["geolocation"], geolocation: STOCKHOLM });
 
