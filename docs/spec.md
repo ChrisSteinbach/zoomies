@@ -235,8 +235,15 @@ Guidance:
 
 ## 7. Core Functional Requirements (MVP)
 
-1. On open, request geolocation; handle denial with a manual
-   location-picker fallback.
+1. The app opens on a welcome screen rather than requesting
+   geolocation. It introduces the app and offers two ways in: "Use my
+   location", where the browser's location permission is first
+   requested, or "Choose a spot on the map", which opens the manual
+   picker without requesting location. After "Use my location", denial
+   or failure falls back to the manual picker exactly as before;
+   picking a spot from the picker searches from there, and cancelling
+   it returns to the welcome screen. Nothing is remembered between
+   visits — the welcome screen shows every time.
 2. Fetch dog parks within an expanding radius until ≥ 5 results or a
    max radius (~25 km) is reached.
 3. Display results as a distance-sorted list and as map pins; each

@@ -275,6 +275,14 @@ body {
   font-weight: 600;
 }
 
+/* The welcome screen is a takeover like the others, but the app's front door
+   rather than a passing status — so its title carries the app's name at a
+   size to match. Everything else (centring, the two buttons, focus rings) it
+   takes from the shared card rules. */
+.status-card[data-status="welcome"] .status-title {
+  font-size: 1.375rem;
+}
+
 .status-detail {
   margin: 0.5rem 0 0;
   color: #444;

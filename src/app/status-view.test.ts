@@ -24,6 +24,7 @@ function callbacks(): StatusCallbacks {
     onRetry: vi.fn(),
     onPickPosition: vi.fn(),
     onRetryLocation: vi.fn(),
+    onRequestLocation: vi.fn(),
   };
 }
 
@@ -67,6 +68,57 @@ function button(container: HTMLElement, label: string): HTMLButtonElement {
   }
   return found;
 }
+
+describe("renderStatus, on the welcome screen", () => {
+  const WELCOME: Phase = { kind: "welcome" };
+
+  it("names the app and says what it is for", () => {
+    const container = mount();
+
+    renderStatus(container, WELCOME, callbacks());
+
+    expect(words(container)).toContain("Zoomies");
+    expect(words(container)).toContain("Find somewhere for your dog to run");
+  });
+
+  it("offers both ways in: the device's location and the map", () => {
+    const container = mount();
+
+    renderStatus(container, WELCOME, callbacks());
+
+    expect(buttonLabels(container)).toEqual([
+      "Use my location",
+      "Choose a spot on the map",
+    ]);
+  });
+
+  it("is the whole screen, since there is nothing behind it yet", () => {
+    const container = mount();
+
+    expect(renderStatus(container, WELCOME, callbacks())).toBe("takeover");
+  });
+
+  it("asks for the device's location, and only that, when chosen", () => {
+    const container = mount();
+    const handlers = callbacks();
+
+    renderStatus(container, WELCOME, handlers);
+    button(container, "Use my location").click();
+
+    expect(handlers.onRequestLocation).toHaveBeenCalled();
+    expect(handlers.onPickPosition).not.toHaveBeenCalled();
+  });
+
+  it("opens the picker when that is chosen instead", () => {
+    const container = mount();
+    const handlers = callbacks();
+
+    renderStatus(container, WELCOME, handlers);
+    button(container, "Choose a spot on the map").click();
+
+    expect(handlers.onPickPosition).toHaveBeenCalled();
+  });
+});
 
 describe("renderStatus, while locating", () => {
   const LOCATING: Phase = { kind: "locating" };

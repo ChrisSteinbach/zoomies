@@ -165,6 +165,17 @@ function statusText(root: HTMLElement): string {
   return root.querySelector(".app-status")?.textContent?.trim() ?? "";
 }
 
+/** Tap a button in the mounted app by its visible label. */
+function tap(root: HTMLElement, label: string): void {
+  const found = [...root.querySelectorAll("button")].find(
+    (candidate) => candidate.textContent === label,
+  );
+  if (!found) {
+    throw new Error(`No button labelled "${label}" in the mounted app`);
+  }
+  found.click();
+}
+
 beforeEach(() => {
   // The timeline is one cold start's worth of module state (load-timeline.ts),
   // not something scoped to a test — without this, only the first test in the
@@ -178,16 +189,27 @@ afterEach(() => {
 });
 
 describe("opening the app", () => {
-  it("starts looking for the user straight away", () => {
+  it("opens on the welcome screen and starts no watch until asked", () => {
     const { root, search } = mount();
 
-    expect(statusText(root)).toMatch(/location/i);
+    expect(root.dataset.presence).toBe("takeover");
+    expect(statusText(root)).toContain("Use my location");
+    expect(search.calls).toBe(0);
+  });
+
+  it("starts looking for the user once they ask for their location", () => {
+    const { root, search } = mount();
+
+    tap(root, "Use my location");
+
+    expect(statusText(root)).toMatch(/finding you/i);
     expect(search.calls).toBe(0);
   });
 
   it("searches from the first fix and lists what it finds", async () => {
     const { root, gps, search } = mount();
 
+    tap(root, "Use my location");
     gps.fix(TANTOLUNDEN);
     await search.answer([DRAKEN, TANTO]);
 
@@ -195,6 +217,18 @@ describe("opening the app", () => {
       "Tantolundens hundrastgård",
       "Drakenbergsparkens hundrastgård",
     ]);
+  });
+
+  it("opens the picker straight from the welcome screen", async () => {
+    const { root, search, picker } = mount();
+
+    tap(root, "Choose a spot on the map");
+    expect(picker.isOpen).toBe(true);
+
+    picker.pick(TANTOLUNDEN);
+    await search.answer([TANTO]);
+
+    expect(parkNames(root)).toEqual(["Tantolundens hundrastgård"]);
   });
 
   it("credits OpenStreetMap before it has found anything at all", () => {
@@ -208,6 +242,7 @@ describe("when the device will not say where the user is", () => {
   it("offers the manual picker and stops asking", () => {
     const { root, gps } = mount();
 
+    tap(root, "Use my location");
     gps.fail("PERMISSION_DENIED");
 
     expect(root.querySelector(".app-status button")?.textContent).toMatch(
@@ -219,6 +254,7 @@ describe("when the device will not say where the user is", () => {
   it("searches from a position the user picks instead", async () => {
     const { root, gps, search, picker } = mount();
 
+    tap(root, "Use my location");
     gps.fail("PERMISSION_DENIED");
     root.querySelector<HTMLButtonElement>(".status-action-primary")!.click();
     picker.pick(TANTOLUNDEN);
@@ -230,6 +266,7 @@ describe("when the device will not say where the user is", () => {
   it("puts the picker away once a position has come back from it", async () => {
     const { root, gps, search, picker } = mount();
 
+    tap(root, "Use my location");
     gps.fail("PERMISSION_DENIED");
     root.querySelector<HTMLButtonElement>(".status-action-primary")!.click();
     picker.pick(TANTOLUNDEN);
@@ -244,6 +281,7 @@ describe("cancelling the picker", () => {
   it("puts the previous results back when the user backs out without picking", async () => {
     const { root, gps, search, picker } = mount();
 
+    tap(root, "Use my location");
     gps.fix(TANTOLUNDEN);
     await search.answer([TANTO, DRAKEN]);
     gps.fix(FAR_ENOUGH);
@@ -275,6 +313,7 @@ describe("switching between GPS and a picked position", () => {
   it("offers the picker from the results and searches where the user picks", async () => {
     const { root, gps, search, picker } = mount();
 
+    tap(root, "Use my location");
     gps.fix(TANTOLUNDEN);
     await search.answer([TANTO]);
 
@@ -293,6 +332,7 @@ describe("switching between GPS and a picked position", () => {
   it("follows the device again when the GPS side is tapped after a pick", async () => {
     const { root, gps, search, picker } = mount();
 
+    tap(root, "Use my location");
     gps.fix(TANTOLUNDEN);
     await search.answer([TANTO]);
     root.querySelector<HTMLButtonElement>(".mode-toggle-pick")!.click();
@@ -323,6 +363,7 @@ describe("switching between GPS and a picked position", () => {
   it("settles back on the picked spot when the device still cannot say", async () => {
     const { root, gps, search, picker } = mount();
 
+    tap(root, "Use my location");
     gps.fix(TANTOLUNDEN);
     await search.answer([TANTO]);
     root.querySelector<HTMLButtonElement>(".mode-toggle-pick")!.click();
@@ -348,6 +389,7 @@ describe("while the user walks", () => {
   it("keeps the results and re-measures for a small step", async () => {
     const { root, gps, search } = mount();
 
+    tap(root, "Use my location");
     gps.fix(TANTOLUNDEN);
     await search.answer([TANTO, DRAKEN]);
     gps.fix({ lat: 59.3128, lon: 18.0421 });
@@ -357,8 +399,9 @@ describe("while the user walks", () => {
   });
 
   it("queries again once they have gone somewhere", async () => {
-    const { gps, search } = mount();
+    const { root, gps, search } = mount();
 
+    tap(root, "Use my location");
     gps.fix(TANTOLUNDEN);
     await search.answer([TANTO]);
     gps.fix(FAR_ENOUGH);
@@ -369,6 +412,7 @@ describe("while the user walks", () => {
   it("ignores an answer to a question the user has already walked away from", async () => {
     const { root, gps, search } = mount();
 
+    tap(root, "Use my location");
     gps.fix(TANTOLUNDEN);
     await search.answer([TANTO]);
     gps.fix(FAR_ENOUGH);
@@ -384,6 +428,7 @@ describe("keeping the reader's place in the list", () => {
   it("picking a new position sends the list back to the top", async () => {
     const { root, gps, search, picker } = mount();
 
+    tap(root, "Use my location");
     gps.fix(TANTOLUNDEN);
     await search.answer([TANTO, DRAKEN]);
     const scroller = root.querySelector<HTMLElement>(".spot-drawer-content")!;
@@ -400,6 +445,7 @@ describe("keeping the reader's place in the list", () => {
   it("resuming GPS after a pick, and landing far away, also sends the list to the top", async () => {
     const { root, gps, search, picker } = mount();
 
+    tap(root, "Use my location");
     gps.fix(TANTOLUNDEN);
     await search.answer([TANTO]);
     root.querySelector<HTMLButtonElement>(".mode-toggle-pick")!.click();
@@ -420,6 +466,7 @@ describe("keeping the reader's place in the list", () => {
   it("walking on does not pull the list out from under the reader", async () => {
     const { root, gps, search } = mount();
 
+    tap(root, "Use my location");
     gps.fix(TANTOLUNDEN);
     await search.answer([TANTO, DRAKEN]);
     const scroller = root.querySelector<HTMLElement>(".spot-drawer-content")!;
@@ -438,6 +485,7 @@ describe("when the lookup fails", () => {
   it("warns that the results are stale rather than blanking them", async () => {
     const { root, gps, search } = mount();
 
+    tap(root, "Use my location");
     gps.fix(TANTOLUNDEN);
     await search.answer([TANTO, DRAKEN]);
     gps.fix(FAR_ENOUGH);
@@ -450,6 +498,7 @@ describe("when the lookup fails", () => {
   it("takes the screen over when the very first search is the one that failed", async () => {
     const { root, gps, search } = mount();
 
+    tap(root, "Use my location");
     gps.fix(TANTOLUNDEN);
     await search.fail(new PlaceProviderError("timeout", "took too long"));
 
@@ -460,6 +509,7 @@ describe("when the lookup fails", () => {
   it("searches again when the user asks it to", async () => {
     const { root, gps, search } = mount();
 
+    tap(root, "Use my location");
     gps.fix(TANTOLUNDEN);
     await search.fail(new PlaceProviderError("timeout", "took too long"));
     root.querySelector<HTMLButtonElement>(".status-action-primary")!.click();
@@ -470,6 +520,7 @@ describe("when the lookup fails", () => {
   it("reports an unexpected throw as an answer it could not read", async () => {
     const { root, gps, search } = mount();
 
+    tap(root, "Use my location");
     gps.fix(TANTOLUNDEN);
     await search.fail(new TypeError("spots.map is not a function"));
 
@@ -481,6 +532,7 @@ describe("finding nothing", () => {
   it("says how far it looked, and does not call it an error", async () => {
     const { root, gps, search } = mount();
 
+    tap(root, "Use my location");
     gps.fix(TANTOLUNDEN);
     await search.answer([], 25_000);
 
@@ -491,6 +543,7 @@ describe("finding nothing", () => {
   it("does not fall back to the parks it found in the last place", async () => {
     const { root, gps, search } = mount();
 
+    tap(root, "Use my location");
     gps.fix(TANTOLUNDEN);
     await search.answer([TANTO, DRAKEN]);
     gps.fix(FAR_ENOUGH);
@@ -504,6 +557,7 @@ describe("acting on a result", () => {
   it("hands the park off to the maps app", async () => {
     const { root, gps, search, openUrl } = mount();
 
+    tap(root, "Use my location");
     gps.fix(TANTOLUNDEN);
     await search.answer([TANTO]);
     root.querySelector<HTMLButtonElement>(".spot-list-directions")!.click();
@@ -516,6 +570,7 @@ describe("acting on a result", () => {
   it("leaves the origin to the maps app when the GPS knows where we are", async () => {
     const { root, gps, search, openUrl } = mount();
 
+    tap(root, "Use my location");
     gps.fix(TANTOLUNDEN);
     await search.answer([TANTO]);
     root.querySelector<HTMLButtonElement>(".spot-list-directions")!.click();
@@ -528,6 +583,7 @@ describe("selecting from the list", () => {
   it("selecting a row steps the sheet aside when it covers the map", async () => {
     const { root, gps, search } = mount();
 
+    tap(root, "Use my location");
     gps.fix(TANTOLUNDEN);
     await search.answer([TANTO]);
     // jsdom lays nothing out, so both the drawer and the map report an
@@ -549,6 +605,7 @@ describe("selecting from the list", () => {
   it("selecting a row keeps the sheet where the map stays visible", async () => {
     const { root, gps, search } = mount();
 
+    tap(root, "Use my location");
     gps.fix(TANTOLUNDEN);
     await search.answer([TANTO]);
     // Desktop-shaped geometry: a drawer narrower than the map beside it
@@ -571,6 +628,7 @@ describe("selecting from the list", () => {
   it("hands keyboard focus to the handle when the sheet steps aside", async () => {
     const { root, gps, search } = mount();
 
+    tap(root, "Use my location");
     gps.fix(TANTOLUNDEN);
     await search.answer([TANTO]);
     root.querySelector<HTMLButtonElement>(".spot-list-select")!.click();
@@ -586,6 +644,7 @@ describe("selecting from the list", () => {
   it("clearing a selection moves no furniture", async () => {
     const { root, gps, search } = mount();
 
+    tap(root, "Use my location");
     gps.fix(TANTOLUNDEN);
     await search.answer([TANTO]);
     root.querySelector<HTMLButtonElement>(".spot-list-select")!.click();
@@ -607,6 +666,7 @@ describe("the map callout, wired", () => {
   it("the callout hands the park off to the maps app", async () => {
     const { root, gps, search, openUrl } = mount();
 
+    tap(root, "Use my location");
     gps.fix(TANTOLUNDEN);
     await search.answer([TANTO]);
     root.querySelector<HTMLButtonElement>(".spot-list-select")!.click();
@@ -625,6 +685,7 @@ describe("the map callout, wired", () => {
   it("dismissing the callout clears the row's selection", async () => {
     const { root, gps, search } = mount();
 
+    tap(root, "Use my location");
     gps.fix(TANTOLUNDEN);
     await search.answer([TANTO]);
     root.querySelector<HTMLButtonElement>(".spot-list-select")!.click();
@@ -639,6 +700,7 @@ describe("the map callout, wired", () => {
   it("tapping the selected pin again clears the selection", async () => {
     const { root, gps, search } = mount();
 
+    tap(root, "Use my location");
     gps.fix(TANTOLUNDEN);
     await search.answer([TANTO]);
     root.querySelector<HTMLButtonElement>(".spot-list-select")!.click();
@@ -678,6 +740,7 @@ describe("the bathing layer, wired", () => {
   it("searches when toggled on and folds what it finds into the one list", async () => {
     const { root, gps, search, bathingSearch } = mount();
 
+    tap(root, "Use my location");
     gps.fix(TANTOLUNDEN);
     await search.answer([TANTO]);
     expect(bathingSearch.calls).toBe(0);
@@ -701,6 +764,7 @@ describe("the bathing layer, wired", () => {
   it("takes the bathing rows back out when toggled off", async () => {
     const { root, gps, search, bathingSearch } = mount();
 
+    tap(root, "Use my location");
     gps.fix(TANTOLUNDEN);
     await search.answer([TANTO]);
     bathingChip(root).click();
@@ -714,6 +778,7 @@ describe("the bathing layer, wired", () => {
   it("offers a retry when the layer fails, which asks again", async () => {
     const { root, gps, search, bathingSearch } = mount();
 
+    tap(root, "Use my location");
     gps.fix(TANTOLUNDEN);
     await search.answer([TANTO]);
     bathingChip(root).click();
@@ -728,6 +793,7 @@ describe("the bathing layer, wired", () => {
   it("shows a place found by both layers once, as the park", async () => {
     const { root, gps, search, bathingSearch } = mount();
 
+    tap(root, "Use my location");
     gps.fix(TANTOLUNDEN);
     await search.answer([TANTO]);
     bathingChip(root).click();
@@ -745,6 +811,7 @@ describe("the bathing layer, wired", () => {
   it("hands a hundbad to the maps app even when no parks were found", async () => {
     const { root, gps, search, bathingSearch, openUrl } = mount();
 
+    tap(root, "Use my location");
     gps.fix(TANTOLUNDEN);
     await search.answer([], 25_000);
     bathingChip(root).click();
@@ -786,6 +853,7 @@ describe("shutting down", () => {
   it("stops following the user and leaves nothing behind", () => {
     const { app, root, gps } = mount();
 
+    tap(root, "Use my location");
     gps.fix(TANTOLUNDEN);
     app.destroy();
 
@@ -796,6 +864,7 @@ describe("shutting down", () => {
   it("closes the picker if it is still open", () => {
     const { app, root, gps, picker } = mount();
 
+    tap(root, "Use my location");
     gps.fail("PERMISSION_DENIED");
     root.querySelector<HTMLButtonElement>(".status-action-primary")!.click();
     app.destroy();
@@ -806,8 +875,9 @@ describe("shutting down", () => {
 
 describe("the load timeline", () => {
   it("marks its way from asking for a position to the first row on screen", async () => {
-    const { gps, search } = mount();
+    const { root, gps, search } = mount();
 
+    tap(root, "Use my location");
     gps.fix(TANTOLUNDEN, 8);
     await search.answer([TANTO]);
 
@@ -821,8 +891,9 @@ describe("the load timeline", () => {
   });
 
   it("notes how far out the fix was", () => {
-    const { gps } = mount();
+    const { root, gps } = mount();
 
+    tap(root, "Use my location");
     gps.fix(TANTOLUNDEN, 8);
 
     const fix = loadMarks().find((mark) => mark.milestone === "first-fix");
@@ -830,8 +901,9 @@ describe("the load timeline", () => {
   });
 
   it("does not claim a first row when the search comes back empty", async () => {
-    const { gps, search } = mount();
+    const { root, gps, search } = mount();
 
+    tap(root, "Use my location");
     gps.fix(TANTOLUNDEN);
     await search.answer([], 25_000);
 
@@ -841,8 +913,9 @@ describe("the load timeline", () => {
   });
 
   it("marks the search as settled even for an answer nobody is waiting for any more", async () => {
-    const { gps, search } = mount();
+    const { root, gps, search } = mount();
 
+    tap(root, "Use my location");
     gps.fix(TANTOLUNDEN);
     await search.answer([TANTO]);
     gps.fix(FAR_ENOUGH);

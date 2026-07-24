@@ -396,6 +396,7 @@ export function composeApp(root: HTMLElement, deps: AppDeps = {}): AppHandle {
       onRetry: () => dispatch({ kind: "retry-requested" }),
       onPickPosition: () => dispatch({ kind: "pick-requested" }),
       onRetryLocation: () => dispatch({ kind: "location-retry-requested" }),
+      onRequestLocation: () => dispatch({ kind: "location-requested" }),
     });
 
     const position = currentPosition(phase);
@@ -450,7 +451,11 @@ export function composeApp(root: HTMLElement, deps: AppDeps = {}): AppHandle {
     if (spots.length > 0) markLoad("first-row");
   }
 
-  dispatch({ kind: "started" });
+  // Open on the welcome screen (initialState.phase). There is nothing to
+  // dispatch and no watcher to start: the app reaches for a position only when
+  // the visitor asks it to, so the first paint is a plain render rather than a
+  // boot event. From here every change flows through `dispatch`.
+  render();
 
   return {
     destroy() {
@@ -590,6 +595,7 @@ function buildShell(root: HTMLElement): Shell {
 /** Where the user is, as far as the current phase knows. */
 function currentPosition(phase: Phase): LatLon | null {
   switch (phase.kind) {
+    case "welcome":
     case "locating":
     case "needs-position":
       return null;

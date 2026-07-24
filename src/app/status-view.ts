@@ -35,6 +35,14 @@ export interface StatusCallbacks {
    * act is asking the device again.
    */
   onRetryLocation: () => void;
+  /**
+   * Reach for the device's position for the first time — the welcome screen's
+   * primary choice, and where the app finally asks for permission.
+   *
+   * Distinct from {@link onRetryLocation}, which is the same act after a
+   * failure: here nothing has been tried yet, so there is no "again".
+   */
+  onRequestLocation: () => void;
 }
 
 /**
@@ -53,6 +61,15 @@ export type StatusPresence =
    * rather than taking the screen over.
    */
   | "notice";
+
+/** The welcome screen's primary call: hand the app the device's location. */
+const USE_MY_LOCATION = "Use my location";
+
+/**
+ * The picker as offered on the welcome screen — a first-class way in, not a
+ * rescue, so it invites ("Choose…") rather than instructs ("Set…").
+ */
+const CHOOSE_ON_MAP = "Choose a spot on the map";
 
 /** The button label for the manual picker, in the states where it is a rescue. */
 const PICK_POSITION = "Set my position on the map";
@@ -162,6 +179,9 @@ function describeStatus(phase: Phase): StatusContent | null {
       // The list owns this one.
       return null;
 
+    case "welcome":
+      return welcome();
+
     case "locating":
       return {
         presence: "takeover",
@@ -207,6 +227,29 @@ function describeStatus(phase: Phase): StatusContent | null {
         phase.staleSpots.length > 0,
       );
   }
+}
+
+/**
+ * The front door, shown before the app reaches for a position (docs/spec.md
+ * §7.1).
+ *
+ * A takeover like the others, but an invitation rather than a status: it names
+ * the app, says in one line what it is for, and offers the two ways in. The
+ * location request then rides a real tap — the primary button — instead of
+ * firing on load, which is the whole point of the pause. The map picker is the
+ * equal alternative for anyone who would rather not share their location at
+ * all, wired to the same `onPickPosition` the rescue states use.
+ */
+function welcome(): StatusContent {
+  return {
+    presence: "takeover",
+    signature: "welcome",
+    status: "welcome",
+    title: "Zoomies",
+    detail:
+      "Find somewhere for your dog to run — the nearest dog parks, wherever you are.",
+    actions: [requestLocation(), pick(CHOOSE_ON_MAP, "secondary")],
+  };
 }
 
 /**
@@ -448,6 +491,16 @@ function pick(label: string, tone: ActionTone = "primary"): StatusAction {
     tone,
     run: (callbacks) => {
       callbacks.onPickPosition();
+    },
+  };
+}
+
+function requestLocation(): StatusAction {
+  return {
+    label: USE_MY_LOCATION,
+    tone: "primary",
+    run: (callbacks) => {
+      callbacks.onRequestLocation();
     },
   };
 }
