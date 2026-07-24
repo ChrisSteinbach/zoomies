@@ -400,6 +400,19 @@ export function createSpotMap(
    *  below can tell its own repositions from the user's hand. */
   let repositioning = false;
   let destroyed = false;
+  /** The last thing {@link SpotMapHandle.render} was asked to draw, so it can
+   *  be replayed the moment the container is finally measured (see the
+   *  ResizeObserver below) — a frame that stood down for want of a laid-out
+   *  viewport gets its second chance against a real one. */
+  let lastRender: {
+    spots: DogSpot[];
+    position: LatLon;
+    selectedId: string | null;
+  } | null = null;
+  /** Watches the map element for the size changes Leaflet's own window-only
+   *  resize handling never hears. Held so {@link SpotMapHandle.destroy} can
+   *  stop it. */
+  let resizeObserver: ResizeObserver | null = null;
 
   /** Every programmatic move this module makes goes through here, without
    *  exception — the fence is what lets any movement outside it be read as
@@ -760,11 +773,15 @@ export function createSpotMap(
     fitToResults(position, spots);
   }
 
-  return {
+  const handle: SpotMapHandle = {
     render(spots, position, selectedId) {
       // A detached view is still a live object to whoever is holding it, and
       // Leaflet throws if asked to draw into a map it has already torn down.
       if (destroyed) return;
+
+      // Kept so a later container measurement can replay it (see the
+      // ResizeObserver at the end of createSpotMap).
+      lastRender = { spots, position, selectedId };
 
       showUser(position);
 
@@ -961,10 +978,54 @@ export function createSpotMap(
       callout.off();
       pins.clear();
       userMarker = null;
+      resizeObserver?.disconnect();
       stopTrackingBounds();
       map.remove();
       mapElement.remove();
       container.classList.remove("spot-map");
     },
   };
+
+  /**
+   * Keep Leaflet's idea of the container's size honest.
+   *
+   * Leaflet measures the map element once and then re-measures only when the
+   * *window* resizes (Map._onResize). Two things this app does never reach
+   * that path. The results map is hidden (`display:none`) until a position is
+   * known and revealed once it is (compose-app.ts, src/styles.css) — a change
+   * the window never hears. And on the first synchronous measure at load, some
+   * browsers hand back a zero-sized box (Chrome has; Firefox has not), which
+   * Leaflet caches and never revisits. Either way the map lays itself out
+   * against a viewport that never existed: tiles for a sliver of it, pins
+   * projected against a phantom origin, the whole map mostly grey until a pan
+   * or a window resize jolts it awake. {@link frameOnce} already stands down
+   * when handed a zero-sized viewport, meaning to try again "on a later
+   * render" — but nothing re-measures, so that later render reads the same
+   * stale zero.
+   *
+   * A ResizeObserver closes the gap: every real change to the container's box,
+   * the reveal from `display:none` included, re-measures the map and replays
+   * the last render so a frame that stood down for want of a viewport gets its
+   * chance now there is one. Replaying is idempotent and cheap (the render
+   * contract) and honours `framed`, so a viewport the user has since taken by
+   * hand is measured afresh but never yanked back. Absent in jsdom, where the
+   * unit tests stub a fixed size and there is nothing to observe — matching
+   * the guard reserveRoomForCredit uses in compose-app.ts.
+   */
+  if (typeof ResizeObserver === "function") {
+    resizeObserver = new ResizeObserver(() => {
+      if (destroyed) return;
+      map.invalidateSize();
+      if (lastRender) {
+        handle.render(
+          lastRender.spots,
+          lastRender.position,
+          lastRender.selectedId,
+        );
+      }
+    });
+    resizeObserver.observe(mapElement);
+  }
+
+  return handle;
 }

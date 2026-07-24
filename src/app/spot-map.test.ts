@@ -654,6 +654,90 @@ describe("createSpotMap", () => {
     map.destroy();
   });
 
+  it("frames the results once its container is finally given a size", () => {
+    // The Chrome-only bug (chrome.png vs firefox.png): the map is created and
+    // handed its answer while its container still measures zero — hidden
+    // behind `display:none` until a position is known (compose-app.ts), or
+    // simply not laid out yet on the first synchronous measure at load.
+    // Leaflet caches that zero and, short of a *window* resize, never measures
+    // again — so the frame frameOnce defers "until a later render" never
+    // comes, and the map is left laid out against a viewport that never
+    // existed. A ResizeObserver is what notices the container getting a real
+    // size; jsdom ships none, so stand in one the test can fire by hand.
+    const fired: Array<() => void> = [];
+    class FakeResizeObserver {
+      constructor(private readonly callback: () => void) {}
+      observe(): void {
+        fired.push(this.callback);
+      }
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    vi.stubGlobal("ResizeObserver", FakeResizeObserver);
+
+    // The container starts with no size — the pre-layout state the real bug
+    // leaves Leaflet caching. The file's fixed 390×640 stub is swapped for a
+    // mutable one just for this test, then restored.
+    const size = { width: 0, height: 0 };
+    const savedWidth = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "clientWidth",
+    )!;
+    const savedHeight = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "clientHeight",
+    )!;
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", {
+      configurable: true,
+      get: () => size.width,
+    });
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+      configurable: true,
+      get: () => size.height,
+    });
+
+    try {
+      const container = mount();
+      const map = createSpotMap(container, {
+        onSelect: vi.fn(),
+        onDirections: vi.fn(),
+      });
+
+      // The answer lands while the container is still zero-sized: frameOnce can
+      // only defer, so it centres on the user at the phantom (0,0) origin — a
+      // zero viewport's own midpoint — leaving the user marker in the top-left
+      // corner and VANADIS, a few km north, far off the bottom.
+      map.render([VANADIS], SLUSSEN, null);
+      const you = youAreHere(container)[0];
+      expect(you.style.left).toBe("0px");
+      expect(you.style.top).toBe("0px");
+
+      // The container is laid out at last — the reveal from display:none — and
+      // the observer reports it, the one signal Leaflet would otherwise miss.
+      size.width = 390;
+      size.height = 640;
+      for (const callback of fired) callback();
+
+      // Framed against the real viewport now: the user has left the corner for
+      // the body of the map, and VANADIS' pin — off-screen a moment ago — is
+      // on screen alongside it. Without the re-measure, both would still sit
+      // where the zero viewport put them.
+      expect(parseFloat(you.style.left)).toBeGreaterThan(50);
+      expect(parseFloat(you.style.top)).toBeGreaterThan(50);
+      const pin = pinNamed(container, VANADIS.name!);
+      expect(parseFloat(pin.style.left)).toBeGreaterThanOrEqual(0);
+      expect(parseFloat(pin.style.left)).toBeLessThanOrEqual(390);
+      expect(parseFloat(pin.style.top)).toBeGreaterThanOrEqual(0);
+      expect(parseFloat(pin.style.top)).toBeLessThanOrEqual(640);
+
+      map.destroy();
+    } finally {
+      Object.defineProperty(HTMLElement.prototype, "clientWidth", savedWidth);
+      Object.defineProperty(HTMLElement.prototype, "clientHeight", savedHeight);
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("keeps the viewport still while the search runs and the user walks", () => {
     const container = mount();
     const map = createSpotMap(container, {
