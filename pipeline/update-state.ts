@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { isBathingCandidate, isDogPark } from "../src/app/osm-tags";
 import { PLANET_REGION, assertDatasetSane, buildDataset } from "./convert";
 import { FILTER_EXPRESSIONS, FILTER_VERSION } from "./filter";
 import {
@@ -43,11 +44,16 @@ import type {
  * members, so the parent's geometry is unbuildable and the feature would
  * silently vanish from the dataset: precisely the confident wrong answer
  * the spec forbids (§3). So after re-filtering, `osmium check-refs`
- * enumerates the incomplete parents, each parent's full geometry is fetched
- * once from the OSM editing API (/way/<id>/full, /relation/<id>/full), the
- * fetched XML is merged in with the seed's newest-version-wins merge
- * (mergeFilteredPbfs — exactly the right semantics, since the API may
- * return a newer version than the diff carried), and the check runs again.
+ * enumerates the incomplete parents, and each one whose own tags could
+ * make it a spot has its full geometry fetched once from the OSM editing
+ * API (/way/<id>/full, /relation/<id>/full). The candidates-only
+ * restriction matters because the filter is a deliberate superset
+ * (filter.ts): fetching a dog=leashed footway's geometry buys a feature
+ * the converter drops, and a bulk edit tagging hundreds of paths that way
+ * must not read as upstream chaos. The fetched XML is merged in with the
+ * seed's newest-version-wins merge (mergeFilteredPbfs — exactly the right
+ * semantics, since the API may return a newer version than the diff
+ * carried), and the check runs again.
  * Whatever is still incomplete after {@link MAX_REPAIR_PASSES} is logged
  * and tolerated, because the export skips what it cannot build — fewer
  * results beat wrong ones.
@@ -104,9 +110,12 @@ const DEFAULT_MAX_DIFFS = 40;
 
 /**
  * Refuse to fetch more than this many /full geometries per repair pass by
- * default. Normal daily retagging churn measures in the tens; hundreds
- * means upstream chaos or a broken state file, and a re-seed is cheaper
- * and kinder than thousands of sequential editing-API calls.
+ * default. Only parents the converter could turn into a spot count against
+ * it (isRepairCandidate) — the filter's superset noise, every dog=* footway
+ * and café, does not — so normal daily retagging churn measures in the
+ * tens; hundreds of genuine candidates means upstream chaos or a broken
+ * state file, and a re-seed is cheaper and kinder than thousands of
+ * sequential editing-API calls.
  */
 const DEFAULT_MAX_REPAIRS = 300;
 
@@ -306,6 +315,12 @@ const PARENT_TYPE_BY_PREFIX: Readonly<Record<string, "way" | "relation">> = {
   r: "relation",
 };
 
+/** The inverse, for spelling a parent as an `osmium getid` id argument. */
+const PARENT_ID_PREFIX: Readonly<Record<RepairParent["type"], string>> = {
+  way: "w",
+  relation: "r",
+};
+
 export function parseCheckRefs(stdout: string): CheckRefsReport {
   const pairs = new Set<string>();
   const parentKeys = new Set<string>();
@@ -330,6 +345,56 @@ export function parseCheckRefs(stdout: string): CheckRefsReport {
   return { missingRefs: pairs.size, parents };
 }
 
+/**
+ * Parses `osmium getid -f opl` stdout into each object's tags, keyed
+ * `way/<id>` / `relation/<id>` — the tags the repair loop needs to tell a
+ * spot worth repairing from the filter's superset noise.
+ *
+ * OPL's shape, pinned to osmium 1.16: one object per line, space-separated
+ * fields, the tags in the one field prefixed `T`, comma-separated
+ * `key=value` (a key alone means the empty value). Values arrive OPL-escaped
+ * as `%XX%` around each encoded byte — spaces, commas, `=`, `%` — and are
+ * deliberately NOT decoded: every key and value this module reads (`dog`,
+ * `leisure`, `natural`, the "hundbad" fragment) is plain ASCII that the
+ * encoding passes through, and a decoder would only be a parser to get
+ * wrong. The caller reads only ways and relations — check-refs never names
+ * a node as a parent — so anything else is format drift.
+ *
+ * A line that does not fit is a loud throw, as in parseCheckRefs: silently
+ * reading no tags would decide "not worth repairing" from no data.
+ */
+export function parseOplTags(
+  stdout: string,
+): Map<string, Record<string, string>> {
+  const tagsByKey = new Map<string, Record<string, string>>();
+  for (const line of stdout.split(/\r?\n/)) {
+    if (line === "") continue;
+    const fields = line.split(" ");
+    const object = fields[0];
+    const type = PARENT_TYPE_BY_PREFIX[object.slice(0, 1)];
+    const id = object.slice(1);
+    const tagField = fields.find((field) => field.startsWith("T"));
+    if (type === undefined || !/^\d+$/.test(id) || tagField === undefined) {
+      throw new Error(
+        `Unrecognised osmium getid -f opl output line: "${line}" — ` +
+          "the parser is written against osmium 1.16's format and must not guess",
+      );
+    }
+    const tags: Record<string, string> = {};
+    for (const pair of tagField.slice(1).split(",")) {
+      if (pair === "") continue;
+      const eq = pair.indexOf("=");
+      if (eq === -1) {
+        tags[pair] = "";
+      } else {
+        tags[pair.slice(0, eq)] = pair.slice(eq + 1);
+      }
+    }
+    tagsByKey.set(`${type}/${id}`, tags);
+  }
+  return tagsByKey;
+}
+
 /** Where a parent's complete geometry lives on the editing API. */
 export function repairFetchUrl(parent: RepairParent): string {
   return `${OSM_API_BASE}/${parent.type}/${parent.id}/full`;
@@ -339,6 +404,7 @@ export function repairFetchUrl(parent: RepairParent): string {
  * The brake between a bad day and a thousand API calls: a repair set this
  * large is not retagging churn, it is upstream chaos or a broken state
  * file, and a re-seed answers both for less than the fetches would cost.
+ * The caller hands it only the candidate parents it is about to fetch.
  */
 export function assertWithinRepairBudget(
   parents: readonly RepairParent[],
@@ -350,6 +416,26 @@ export function assertWithinRepairBudget(
         "upstream chaos or a broken state; re-seed instead of hammering the editing API",
     );
   }
+}
+
+/**
+ * Whether a missing-ref parent's own tags give the converter any use for
+ * its geometry, and so whether repairing it can change the dataset at all.
+ *
+ * The filter keeps a deliberate superset — every object carrying a `dog`
+ * key, whatever its feature type or value (filter.ts) — so a bulk edit that
+ * tags a few hundred footways `dog=leashed` (real: 2026-08-22, and the
+ * reason this exists) lands in check-refs' missing set and would otherwise
+ * spend the repair budget fetching geometry convert.ts drops unseen.
+ *
+ * The test is the converter's own ({@link isDogPark}, {@link isBathingCandidate}),
+ * deliberately over-approximating in one direction only: a name-match
+ * candidate later denied by `dog=no` costs one fetch that the converter
+ * drops, while under-approximating would leave a real spot's geometry
+ * unbuilt — the confident wrong answer the repair loop exists to close.
+ */
+export function isRepairCandidate(tags: Record<string, string>): boolean {
+  return isDogPark(tags) || isBathingCandidate(tags);
 }
 
 /**
@@ -477,13 +563,25 @@ export async function runUpdate(
       pass <= MAX_REPAIR_PASSES && report.parents.length > 0;
       pass += 1
     ) {
-      // A parent already fetched and still incomplete (a 404, or geometry
-      // the API itself could not close) cannot be fixed by fetching again.
-      const targets = report.parents.filter(
-        (parent) => !attempted.has(`${parent.type}/${parent.id}`),
-      );
+      // Candidates only, and each fetched at most once: a parent already
+      // fetched and still incomplete (a 404, or geometry the API itself
+      // could not close) cannot be fixed by fetching again, and a parent
+      // the filter kept as superset noise (isRepairCandidate) is not worth
+      // a fetch at all. The budget brakes the fetches, so it counts targets,
+      // not the missing set check-refs happens to report.
+      const tagsByKey = readParentTags(workingPbf, report.parents);
+      const targets = report.parents.filter((parent) => {
+        const key = `${parent.type}/${parent.id}`;
+        if (attempted.has(key)) return false;
+        const tags = tagsByKey.get(key);
+        if (tags === undefined) {
+          // readParentTags verified completeness; unreachable by construction.
+          throw new Error(`No tags read for missing-ref parent ${key}`);
+        }
+        return isRepairCandidate(tags);
+      });
       if (targets.length === 0) break;
-      assertWithinRepairBudget(report.parents, maxRepairs);
+      assertWithinRepairBudget(targets, maxRepairs);
 
       const repairFiles: string[] = [];
       for (const target of targets) {
@@ -621,6 +719,44 @@ function checkRefs(pbfPath: string): CheckRefsReport {
     throw new Error(`osmium check-refs failed: ${result.stderr}`);
   }
   return report;
+}
+
+/**
+ * Reads every missing-ref parent's own tags in one `osmium getid` call.
+ * The parents came from check-refs over the same file, so one failing to
+ * come back is not a shape to tolerate: deciding "not worth repairing" from
+ * absent tags is exactly the silent drop the repair loop guards against.
+ * The command line stays out of the log — hundreds of ids would bury it.
+ */
+function readParentTags(
+  pbfPath: string,
+  parents: readonly RepairParent[],
+): Map<string, Record<string, string>> {
+  const ids = parents.map(
+    (parent) => `${PARENT_ID_PREFIX[parent.type]}${parent.id}`,
+  );
+  console.log(`$ osmium getid -f opl ${pbfPath} (${ids.length} parents)`);
+  const result = spawnSync("osmium", ["getid", "-f", "opl", pbfPath, ...ids], {
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    throw new Error(
+      `osmium getid exited ${String(result.status)}: ${result.stderr}`,
+    );
+  }
+  const tagsByKey = parseOplTags(result.stdout);
+  for (const parent of parents) {
+    const key = `${parent.type}/${parent.id}`;
+    if (!tagsByKey.has(key)) {
+      throw new Error(
+        `osmium getid did not return missing-ref parent ${key} — ` +
+          "refusing to decide its repair from absent tags",
+      );
+    }
+  }
+  return tagsByKey;
 }
 
 /** The exported FeatureCollection's features, or a throw (as in build-dataset.ts). */

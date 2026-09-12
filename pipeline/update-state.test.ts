@@ -11,7 +11,9 @@ import {
   assertWithinRepairBudget,
   dailyDiffUrl,
   isGoneUpstream,
+  isRepairCandidate,
   parseCheckRefs,
+  parseOplTags,
   planDiffSequences,
   repairFetchUrl,
   runUpdate,
@@ -219,6 +221,48 @@ describe("parseCheckRefs", () => {
   });
 });
 
+describe("parseOplTags", () => {
+  it("derives parent tags from osmium 1.16's real getid output", () => {
+    // Captured verbatim from `osmium getid -f opl` (osmium 1.16.0) over a
+    // fixture with a fully-tagged way, a tagless way, and a relation. The
+    // tag field is the one introduced by T; OPL wraps each escaped byte in
+    // percent signs — `%20%` a space, `%2c%` a comma, `%3d%` an equals
+    // sign — and leaves plain ASCII and UTF-8 untouched.
+    const captured = [
+      "w9001 v5 dV c0 t2026-07-21T12:00:00Z i0 u Tleisure=dog_park,name=Nya%20%hundrastgården%2c%%20%norra,description=a%3d%b%2c%%20%c%20%d,dog= Nn8101,n8102,n8103,n8104,n8101",
+      "w9002 v2 dV c0 t2026-07-21T12:00:00Z i0 u T Nn8001,n8001",
+      "r7001 v3 dV c0 t2026-07-21T12:00:00Z i0 u Ttype=multipolygon,leisure=dog_park Mw9001@outer",
+    ].join("\n");
+
+    const tags = parseOplTags(captured);
+
+    expect(tags.get("way/9001")).toEqual({
+      leisure: "dog_park",
+      name: "Nya%20%hundrastgården%2c%%20%norra",
+      description: "a%3d%b%2c%%20%c%20%d",
+      dog: "",
+    });
+    expect(tags.get("way/9002")).toEqual({});
+    expect(tags.get("relation/7001")).toEqual({
+      type: "multipolygon",
+      leisure: "dog_park",
+    });
+  });
+
+  it("throws on a line it does not recognise", () => {
+    // The same contract as parseCheckRefs: a parser that shrugged here
+    // would filter repairs from no tags, which is how a real spot's
+    // geometry silently stays unbuilt.
+    expect(() => parseOplTags("not opl at all")).toThrow(
+      /Unrecognised osmium getid -f opl output/,
+    );
+    // A node-shaped line is drift: check-refs never names a node a parent.
+    expect(() => parseOplTags("n1 v1 dV c0 t x1 y1")).toThrow(
+      /Unrecognised osmium getid -f opl output/,
+    );
+  });
+});
+
 describe("repairFetchUrl", () => {
   it("maps a way to its /full endpoint", () => {
     expect(repairFetchUrl({ type: "way", id: "456" })).toBe(
@@ -248,6 +292,37 @@ describe("assertWithinRepairBudget", () => {
     expect(() => assertWithinRepairBudget(parents(301), 300)).toThrow(
       /301 parents.*--max-repairs.*300.*re-seed/,
     );
+  });
+});
+
+describe("isRepairCandidate", () => {
+  it("accepts the tags the converter can turn into spots", () => {
+    expect(isRepairCandidate({ leisure: "dog_park" })).toBe(true);
+    expect(isRepairCandidate({ leisure: "bathing_place", dog: "yes" })).toBe(
+      true,
+    );
+    expect(isRepairCandidate({ natural: "beach", dog: "designated" })).toBe(
+      true,
+    );
+    expect(
+      isRepairCandidate({ leisure: "swimming_area", dog: "designated" }),
+    ).toBe(true);
+    // The name fallback: a named feature whose name holds the word.
+    expect(
+      isRepairCandidate({ leisure: "swimming_area", name: "Hundbadet" }),
+    ).toBe(true);
+  });
+
+  it("rejects the filter's superset noise", () => {
+    // The 2026-08-22 bulk edit: footways tagged dog=leashed. The filter
+    // keeps them (the dog key), the converter can never emit a spot from
+    // them, and repairing them is pure API spend.
+    expect(isRepairCandidate({ highway: "footway", dog: "leashed" })).toBe(
+      false,
+    );
+    expect(isRepairCandidate({ amenity: "cafe", dog: "yes" })).toBe(false);
+    expect(isRepairCandidate({ highway: "path", dog: "no" })).toBe(false);
+    expect(isRepairCandidate({})).toBe(false);
   });
 });
 
@@ -683,6 +758,170 @@ describe("runUpdate (integration, needs osmium)", () => {
 
         // The commit point still fires: a gone-upstream skip is not a run
         // failure, so metadata still advances to the head just replayed.
+        const nextMeta = JSON.parse(
+          readFileSync(join(tmp, "next-state.json"), "utf8"),
+        ) as SeedStateMeta;
+        expect(nextMeta.sequenceNumber).toBe(5062);
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    },
+    30_000,
+  );
+
+  it.skipIf(!osmiumAvailable)(
+    "budgets candidates only, skipping the filter's superset noise",
+    async () => {
+      // The 2026-08-23 production failure, shrunk: a diff retags two
+      // footways into the filter's superset (dog=leashed — convert.ts can
+      // never emit a spot from them) whose nodes are not in the state, and
+      // one genuine dog park. With maxRepairs=1 the old budget counted all
+      // three parents and threw; only the park is worth a fetch, and it
+      // must still be repaired while the noise is left to the export's
+      // drop-what-cannot-be-built.
+      const tmp = mkdtempSync(join(tmpdir(), "zoomies-update-test-"));
+      try {
+        const stateXml = [
+          "<?xml version='1.0' encoding='UTF-8'?>",
+          '<osm version="0.6" generator="update-state-test">',
+          '  <node id="100" version="1" timestamp="2026-07-01T00:00:00Z" lat="59.3293000" lon="18.0686000">',
+          '    <tag k="leisure" v="dog_park"/>',
+          '    <tag k="name" v="Vasaparkens hundrastgård"/>',
+          "  </node>",
+          "</osm>",
+        ].join("\n");
+        writeFileSync(join(tmp, "state.osm"), stateXml);
+        execFileSync("osmium", [
+          "cat",
+          join(tmp, "state.osm"),
+          "-o",
+          join(tmp, "state.osm.pbf"),
+        ]);
+        writeFileSync(
+          join(tmp, "state.json"),
+          JSON.stringify({
+            schema: 1,
+            filterVersion: FILTER_VERSION,
+            sequenceNumber: 5061,
+            timestamp: "2026-07-19T00:00:00.000Z",
+            seededFrom: [
+              { file: "sweden.osm.pbf", timestamp: "2026-07-20T00:00:00Z" },
+            ],
+          }),
+        );
+
+        const diffXml = [
+          "<?xml version='1.0' encoding='UTF-8'?>",
+          '<osmChange version="0.6" generator="update-state-test">',
+          "  <modify>",
+          '    <way id="9001" version="5" timestamp="2026-07-21T12:00:00Z">',
+          '      <nd ref="8001"/>',
+          '      <nd ref="8002"/>',
+          '      <tag k="highway" v="footway"/>',
+          '      <tag k="dog" v="leashed"/>',
+          "    </way>",
+          "  </modify>",
+          "  <modify>",
+          '    <way id="9002" version="5" timestamp="2026-07-21T12:00:00Z">',
+          '      <nd ref="8101"/>',
+          '      <nd ref="8102"/>',
+          '      <nd ref="8103"/>',
+          '      <nd ref="8104"/>',
+          '      <nd ref="8101"/>',
+          '      <tag k="leisure" v="dog_park"/>',
+          '      <tag k="name" v="Nya hundrastgården"/>',
+          "    </way>",
+          "  </modify>",
+          "  <modify>",
+          '    <way id="9003" version="5" timestamp="2026-07-21T12:00:00Z">',
+          '      <nd ref="8201"/>',
+          '      <nd ref="8202"/>',
+          '      <tag k="highway" v="path"/>',
+          '      <tag k="dog" v="leashed"/>',
+          "    </way>",
+          "  </modify>",
+          "</osmChange>",
+        ].join("\n");
+
+        const fullXml = [
+          '<?xml version="1.0" encoding="UTF-8"?>',
+          '<osm version="0.6" generator="OpenStreetMap server">',
+          ' <node id="8101" visible="true" version="1" changeset="1" timestamp="2026-06-01T00:00:00Z" user="t" uid="1" lat="59.3400000" lon="18.0500000"/>',
+          ' <node id="8102" visible="true" version="1" changeset="1" timestamp="2026-06-01T00:00:00Z" user="t" uid="1" lat="59.3400000" lon="18.0520000"/>',
+          ' <node id="8103" visible="true" version="1" changeset="1" timestamp="2026-06-01T00:00:00Z" user="t" uid="1" lat="59.3420000" lon="18.0520000"/>',
+          ' <node id="8104" visible="true" version="1" changeset="1" timestamp="2026-06-01T00:00:00Z" user="t" uid="1" lat="59.3420000" lon="18.0500000"/>',
+          ' <way id="9002" visible="true" version="5" changeset="2" timestamp="2026-07-21T12:00:00Z" user="t" uid="1">',
+          '  <nd ref="8101"/>',
+          '  <nd ref="8102"/>',
+          '  <nd ref="8103"/>',
+          '  <nd ref="8104"/>',
+          '  <nd ref="8101"/>',
+          '  <tag k="leisure" v="dog_park"/>',
+          '  <tag k="name" v="Nya hundrastgården"/>',
+          " </way>",
+          "</osm>",
+        ].join("\n");
+
+        // Only the candidate's /full is routed; the per-test 500 fallback
+        // is what catches a fetch for either footway.
+        const requests: { url: string; userAgent: string | null }[] = [];
+        const fetchImpl = fakeFetch(
+          {
+            "https://planet.osm.org/replication/day/state.txt": () =>
+              new Response(
+                "#Fake osmosis state\n" +
+                  "sequenceNumber=5062\n" +
+                  "timestamp=2026-07-22T00\\:00\\:00Z\n",
+              ),
+            "https://planet.osm.org/replication/day/000/005/062.osc.gz": () =>
+              new Response(new Uint8Array(gzipSync(diffXml))),
+            "https://api.openstreetmap.org/api/0.6/way/9002/full": () =>
+              new Response(fullXml),
+          },
+          requests,
+        );
+
+        const summary = await runUpdate({
+          statePath: join(tmp, "state.osm.pbf"),
+          metaPath: join(tmp, "state.json"),
+          outStatePath: join(tmp, "next-state.osm.pbf"),
+          outMetaPath: join(tmp, "next-state.json"),
+          outDatasetPath: join(tmp, "dogspots.json"),
+          fetchImpl,
+          repairPauseMs: 0,
+          // One repair is all this run is allowed: the two noise parents
+          // would blow the old parents-based budget on their own.
+          maxRepairs: 1,
+          region: "integration-test",
+          now: () => new Date("2026-07-22T06:00:00.000Z"),
+        });
+
+        // The candidate was fetched, the noise skipped, and the run lands
+        // its state rather than tripping the brake.
+        expect(summary).toEqual({
+          diffsApplied: 1,
+          repairsFetched: 1,
+          repairsSkippedGone: 0,
+          unresolvedRefs: 4,
+          spots: 2,
+          dogParks: 2,
+          bathingSpots: 0,
+        });
+        expect(requests.map((request) => request.url)).toContain(
+          "https://api.openstreetmap.org/api/0.6/way/9002/full",
+        );
+        expect(
+          requests.filter((request) => request.url.endsWith("/full")).length,
+        ).toBe(1);
+
+        const dataset = JSON.parse(
+          readFileSync(join(tmp, "dogspots.json"), "utf8"),
+        ) as { spots: { id: string }[] };
+        expect(dataset.spots.map((spot) => spot.id).sort()).toEqual([
+          "node/100",
+          "way/9002",
+        ]);
+
         const nextMeta = JSON.parse(
           readFileSync(join(tmp, "next-state.json"), "utf8"),
         ) as SeedStateMeta;
